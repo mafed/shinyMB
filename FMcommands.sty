@@ -1,0 +1,125 @@
+%%% ------------------------------------------------------------%%%
+%%% FMcommands.sty                                              %%%
+%%% di Federico Mattiello (2014)                               %%%
+%%% personal package with useful commands            %%%
+%%% ------------------------------------------------------------%%%
+\ProvidesPackage{FMcommands}[2014/03/13 Personal package]
+\usepackage{amsmath}
+\usepackage{xcolor}
+
+%%%
+%%%-----    customised colors definition for the 'colortheme'   -----%%%
+%%%
+\definecolor{myDarkBlue}{rgb}{0.1,0,0.55}
+\definecolor{myDeepSkyBlue}{rgb}{0.00,0.30,0.40}
+\definecolor{myKugreen}{RGB}{10,53,21}
+\definecolor{myLightSkyBlue}{rgb}{0.69,0.89,1.00}
+\definecolor{myRoyalBlue1}{rgb}{0.23,0.37,0.80}
+\definecolor{myRoyalBlue2}{rgb}{0.07,0.13,0.45}
+\definecolor{myKhaki}{rgb}{0.84,0.80,0.45}
+\newcommand{\textbfcol}[2]{\textcolor{#1}{\bfseries #2}}
+%%% colors of University and Faculty
+\definecolor{fbw1}{HTML}{22BCB9} 
+\definecolor{fbw2}{HTML}{2272BC} 
+\definecolor{ugent1}{HTML}{0A1E60} 
+\definecolor{ugent2}{HTML}{FFB300}
+\definecolor{ugent1b}{HTML}{0A4960}
+
+%%%
+%%% mathematics commands
+%%%
+
+%% number sets
+\newcommand{\numberset}{\mathcal} 
+\newcommand{\N}{\numberset{N}} 
+\newcommand{\R}{\numberset{R}} 
+
+%% operators
+\newcommand{\abs}[1]{\lvert #1 \rvert}
+\newcommand{\deqTo}{\mathop{\mathrel{:}}\! =}
+\newcommand{\condProb}[2]{%         conditional probability
+    \mathrm{P} \left[ #1 \vert #2 \right]}
+\newcommand{\cor}[1]{%                  correlation operator
+    \text{Cor}\left\{ #1 \right\}}
+\newcommand{\hatCor}[1]{%             hat correlation operator
+    \text{C}\widehat{\text{\rule{0em}{.75em}o}}\text{r} \! \left\{%
+     #1 \right\}}
+\newcommand{\corSq}[1]{%              squared correlation operator
+    \text{Cor}^2 \! \left\{ #1 \right\}}
+\newcommand{\hatCorSq}[1]{%             hat covariance operator
+    {\text{C}\widehat{\text{\rule{0em}{.75em}o}}\text{r}}^2 \! \left\{%
+     #1 \right\}}
+\newcommand{\cov}[1]{%                 covariance operator
+    \text{Cov}\left\{ #1 \right\}}
+\newcommand{\hatCov}[1]{%             hat covariance operator
+    \text{C}\widehat{\text{\rule{0em}{.75em}o}}\text{v} \! \left\{%
+     #1 \right\}}
+\newcommand{\covSq}[1]{%              squared covariance operator
+    \text{Cov}^2 \! \left\{ #1 \right\}}
+\newcommand{\hatCovSq}[1]{%             hat covariance operator
+    {\text{C}\widehat{\text{\rule{0em}{.75em}o}}\text{v}}^2 \!\left\{%
+     #1 \right\}} \newcommand{\var}[1]{%                  variance operator
+    \text{Var}\left\{ #1 \right\}}
+\newcommand{\hatVar}[1]{%              hat variance operator
+     \text{V}\widehat{\text{\rule{0em}{.75em}a}}\text{r} \!\left\{%
+     #1 \right\}}
+\newcommand{\ind}{%                 independence symbol
+    \mathop{\mathrel{\bot\hspace*{-1em}\bot}}}
+\newcommand{\norm}[2]{{\lVert #1 \rVert}_{#2}}
+\newcommand{\indicat}[1]{\mathbb I \left\{ #1 \right\}}
+\DeclareMathOperator{\pluscup}{\ensuremath{\mathaccent+\cup}}
+
+
+%% mathematical environments
+\newtheorem{Con}{Conjecture}
+\newenvironment{proof}
+    {\par {\bfseries Proof. }}
+    {\hfill $\square$}
+\newcommand{\pval}{$p$-value}%      nicer p-value
+\newcommand{\RjSq}{R_j^2 \left( w \right)}
+\newtheorem{Thm}{Theorem}
+% \newcommand{\bchat}{%
+%     \mathrm B\widehat{\phantom{M}\hspace*{-1.07em}\mathrm{ico}} \mathrm r }
+\newcommand{\bchat}{%
+    \mathrm B\widehat{\mathrm{ico}}\mathrm r }
+\newcommand{\hy}{\phantom{-}}
+
+%% data sources symbols
+\newcommand{\Xg}{{\bfseries X}${}_G$}
+\newcommand{\mathXg}{\mathbf{X}_G}
+\newcommand{\Yb}{$Y_B$}
+\newcommand{\Xcj}{$X_{Cj}$}
+\newcommand{\X}{\mathbf{X}}
+\renewcommand{\epsilon}{\varepsilon}%   redefine epsilon
+
+
+
+
+%%%
+%%% NON mathematics commands
+%%%
+
+%% hyphenations
+
+%% typography
+\renewcommand{\thefootnote}{\alph{footnote}}
+% \renewcommand{\Cap}[1]{%          guillemots
+%     \guillemotleft{#1}\guillemotright}
+\newcommand{\Rprog}{%          truetype of R name
+    \texttt{R}\ }
+\newcommand{\gss}{\emph{Gene Set Score}}
+\newcommand{\bemph}[1]{\textbf{\emph{#1}}}
+\newcommand{\omissis}{[\dots\negthinspace]}        % [...] ;-)
+
+%% to put a linebreak inside a cell
+\newcommand{\specialcell}[2][c]{%
+  \begin{tabular}[#1]{@{}c@{}}#2\end{tabular}}
+
+%% latin abbreviations
+\newcommand{\eg}{{\em e.g.\ }}
+\newcommand{\etal}{{\em et al.\ }}
+\newcommand{\ie}{{\em i.e.\ }}
+\newcommand{\etc}{{\em etc.}}
+\newcommand{\vs}{{\em vs.\ }}
+\newcommand{\wrt}{{\em w.r.t.\ }}
+
