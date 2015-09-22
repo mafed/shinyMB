@@ -19,7 +19,6 @@
 ###
 
 
-
 ### generation of abundance probability distribution for sample one
 piOneGen <- function (K = 100, pBreak = .15, rates = c(1, .5), 
                       kind = NULL,  diss = 0.05)
@@ -143,24 +142,81 @@ rhoGenSpecOtus <- function(K, m1 = 2, m2 = 3, relAbund1 = 1.33, relAbund2 = 1.25
 
 
 
-piTwoGen <- function(piOne, rho, compensation = c("relDiff", "zeros", "piAux"), 
-                     otus4Balance = NA)
+
+
+piTwoGenSimple <- function(piOne, rho, compensation = c("mostAbund"))
 {
-  if(missing(compensation))
-  {
-    compensation <- "relDiff"
-  } else {}
-  
-  piTwo <- piOne * rho$rho
+  ### classify OTUs in: (i) non DA, (ii) DA, and (iii) DA for compensation
   otuType <- rep.int(0, length(rho$rho))
   ind1 <- abs(rho$rho - rho$relAbund1) <= .Machine$double.eps
   ind2 <- abs(rho$rho - rho$relAbund2) <= .Machine$double.eps
   otuType[ind1] <- 2
   otuType[ind2] <- 1
   
+  ### actually modify piOne
+  piTwo <- piOne * rho$rho
+  
   ### compute how much probability mass we have to compensate
+  
+  switch(compensation, 
+      "mostAbund" = {
+        toCompensate <- sum(piTwo - piOne)
+        changedOTUs <- rho$changedOTUs
+        startInd <- min(which(otuType == 0))
+        indRun <- startInd
+        
+        while(abs(sum(piTwo)) - 1 > 1e-12)
+        {
+          aux <- piTwo[indRun]
+          piTwo[indRun] <- max(aux - toCompensate, 0)
+          toCompensate <- sign(toCompensate) * abs(aux - toCompensate)
+          indRun <- indRun + 1L
+        }# END - while: compensate sequentially 
+      }# END - switch: compensation
+  )
+  
+}# END - function: new piTwoGen, simple version
+
+
+
+
+
+
+piTwoGen <- function(piOne, rho, 
+    compensation = c("mostAbund", "relDiff", "zeros", "piAux"), otus4Balance = NA)
+{
+  if(missing(compensation))
+  {
+#    compensation <- "relDiff"
+    compensation <- "mostAbund"
+  } else {}
+  
+  ### classify OTUs in: (i) non DA, (ii) DA, and (iii) DA for compensation
+  otuType <- rep.int(0L, length(rho$rho))
+  indEqual <- abs(rho$rho - 1) <= .Machine$double.eps
+  ind1 <- abs(rho$rho - rho$relAbund1) <= .Machine$double.eps & !indEqual
+  ind2 <- abs(rho$rho - rho$relAbund2) <= .Machine$double.eps & !indEqual
+  otuType[ind1] <- 2L
+  otuType[ind2] <- 1L
+  
+  ### actually modify piOne
+  piTwo <- piOne * rho$rho
+#  changedOTUs <- rho$changedOTUs
+  changedOTUs <- which(otuType != 0)
+  
+  ### compute how much probability mass we have to compensate and
+  ### check if compensation is too big
   increase <- sum(abs(piTwo - piOne))
-  changedOTUs <- rho$changedOTUs
+  toCompensate <- sum(piTwo - piOne)
+  compensDiff <- toCompensate - sum(piOne[otuType == 0])
+  if (compensDiff > 1e-12)
+  {
+    equalOTUs <- otuType != 0L
+    piTwo[equalOTUs] <- piTwo[equalOTUs] - compensDiff / sum(equalOTUs)
+    rho$rho <- piTwo / piOne
+    rho$relAbund1 <- el(rho$rho[otuType == 2L])
+    rho$relAbund2 <- el(rho$rho[otuType == 1L])
+  } else {}
   
   if (!is.na(otus4Balance[1L]))
   {
@@ -169,82 +225,103 @@ piTwoGen <- function(piOne, rho, compensation = c("relDiff", "zeros", "piAux"),
   
   ## method of the fixed relative difference
   switch (compensation, 
-          "zeros" = {
-            ### set to zero all least abundant OTUs or the ones next to the changed ones
-            otus4Balance <- setdiff(seq_along(piTwo), changedOTUs)
-            piTwoCumsum <- cumsum(rev(piTwo[-changedOTUs]))
-            indBal <- max(which(piTwoCumsum <= increase))
-            otus4Balance <- tail(otus4Balance, n = indBal)
-            piTwo[otus4Balance] <- 0
-            otuType[otus4Balance] <- -1
-          },
-          
-          "relDiff" = {
-            piOneAux <- piOne[-changedOTUs]
-            
-            ## if OTUs that are need for compensation are not specified, 
-            ## take the ones just before the changed ones, but with relative 
-            ## abundance difference that is less of *relAbundance2* when present
-            otus4Balance <- setdiff(seq_along(piOne), changedOTUs)
-            halfRelAbund2 <- max(1.25, .75 * (rho$relAbund2 - 1) + 1)
-            piAuxCumsum <- cumsum(rev(piOneAux - piOneAux / halfRelAbund2))
-            
-            if(any(piAuxCumsum > 2 * increase))
-            {
-              indBal2 <- max(which(piAuxCumsum <= increase))
-              otus4Balance <- tail(otus4Balance, n = indBal2)
-              piTwo[otus4Balance] <- piOne[otus4Balance] / halfRelAbund2
-            } else
-            {
-              ## shrink to zero the least abundant OTUs
-              piOneCumsum <- cumsum(rev(piOneAux))
-              indBal1 <- max(which(piOneCumsum <= increase/2) + 1L)
-              indBal2 <- max(which(piAuxCumsum[-seq_len(indBal1)] <= increase/2))
-              otus4Balance <- tail(otus4Balance, n = indBal1 + indBal2 + 1)
-              piTwo[otus4Balance[seq_len(indBal2)]] <- 
-                piOne[otus4Balance[seq_len(indBal2)]] / halfRelAbund2
-              piTwo[otus4Balance[seq_len(indBal1) + indBal2 + 1]] <- 0
-            }# END - ifelse: not enough OTUs for balancing
-            
-            otuType[otus4Balance] <- -1
-          },        # END of *relDiff* compensation method
-          
-          "piAux" = {
-            piAux <- piOneGen(length(piOne), pBreak = .05, rates = c(1.2, .2))[-changedOTUs]
-            piTwoAux <- piTwo[-changedOTUs]
-            cumSumAux <- cumsum(rev(abs(piTwoAux - piAux)))
-            
-            nOtus4Balance <- max(which(cumSumAux <= increase))
-            
-            revPiAux <- rev(piAux)
-            revPiTwoAux <- rev(piTwoAux)
-            
-            revPiTwoAux[seq_len(nOtus4Balance)] <- revPiAux[seq_len(nOtus4Balance)]
-            
-            if (piTwoAux[1L] < piTwo[changedOTUs[1L]])
-            {
-              piTwo <- c(piTwo[changedOTUs], rev(revPiTwoAux))
-            } else
-            {
-              piTwo <- c(rev(revPiTwoAux), piTwo[changedOTUs])
-            }
-            
-            indOtus4Balance <- tail(which(otuType < 1e-9), n = nOtus4Balance)
-            otuType[indOtus4Balance] <- -1
-          },
-          
-          "fixedOTUs" = {
-            piOneAux <- piOne[-changedOTUs]
-            aux <- piTwo[otus4Balance] - increase / length(otus4Balance)
-            if (any(aux < 0))
-            {
-              aux[aux < 0] <- 0
-              warning ("Not enough OTUs for re-normalisation.")
-            } else {}
-            
-            piTwo[otus4Balance] <- aux
-            otuType[otus4Balance] <- -1
-          }
+      "mostAbund" = {
+        
+        startInd <- min(which(otuType == 0))
+        indRun <- startInd
+        numIter <- 1L
+        
+        while(abs(sum(piTwo) - 1) > 1e-10 && numIter <= (length(piTwo) - startInd))
+        {
+          aux <- piTwo[indRun]
+          piTwo[indRun] <- max(aux - toCompensate, 0)
+          toCompensate <- sign(toCompensate) * abs(aux - toCompensate)
+          indRun <- indRun + 1L
+          numIter <- numIter + 1L
+        }# END - while: compensate sequentially
+        
+        if (startInd != indRun)
+        {
+          otuType[startInd:indRun] <- -1
+        } else {}
+      },
+      
+      "zeros" = {
+        ### set to zero all least abundant OTUs or the ones next to the changed ones
+        otus4Balance <- setdiff(seq_along(piTwo), changedOTUs)
+        piTwoCumsum <- cumsum(rev(piTwo[-changedOTUs]))
+        indBal <- max(which(piTwoCumsum <= increase))
+        otus4Balance <- tail(otus4Balance, n = indBal)
+        piTwo[otus4Balance] <- 0
+        otuType[otus4Balance] <- -1
+      },
+      
+      "relDiff" = {
+        piOneAux <- piOne[-changedOTUs]
+        
+        ## if OTUs that are need for compensation are not specified, 
+        ## take the ones just before the changed ones, but with relative 
+        ## abundance difference that is less of *relAbundance2* when present
+        otus4Balance <- setdiff(seq_along(piOne), changedOTUs)
+        halfRelAbund2 <- max(1.25, .75 * (rho$relAbund2 - 1) + 1)
+        piAuxCumsum <- cumsum(rev(piOneAux - piOneAux / halfRelAbund2))
+        
+        if(any(piAuxCumsum > 2 * increase))
+        {
+          indBal2 <- max(which(piAuxCumsum <= increase))
+          otus4Balance <- tail(otus4Balance, n = indBal2)
+          piTwo[otus4Balance] <- piOne[otus4Balance] / halfRelAbund2
+        } else
+        {
+          ## shrink to zero the least abundant OTUs
+          piOneCumsum <- cumsum(rev(piOneAux))
+          indBal1 <- max(which(piOneCumsum <= increase/2) + 1L)
+          indBal2 <- max(which(piAuxCumsum[-seq_len(indBal1)] <= increase/2))
+          otus4Balance <- tail(otus4Balance, n = indBal1 + indBal2 + 1)
+          piTwo[otus4Balance[seq_len(indBal2)]] <- 
+              piOne[otus4Balance[seq_len(indBal2)]] / halfRelAbund2
+          piTwo[otus4Balance[seq_len(indBal1) + indBal2 + 1]] <- 0
+        }# END - ifelse: not enough OTUs for balancing
+        
+        otuType[otus4Balance] <- -1
+      },        # END of *relDiff* compensation method
+      
+      "piAux" = {
+        piAux <- piOneGen(length(piOne), pBreak = .05, rates = c(1.2, .2))[-changedOTUs]
+        piTwoAux <- piTwo[-changedOTUs]
+        cumSumAux <- cumsum(rev(abs(piTwoAux - piAux)))
+        
+        nOtus4Balance <- max(which(cumSumAux <= increase))
+        
+        revPiAux <- rev(piAux)
+        revPiTwoAux <- rev(piTwoAux)
+        
+        revPiTwoAux[seq_len(nOtus4Balance)] <- revPiAux[seq_len(nOtus4Balance)]
+        
+        if (piTwoAux[1L] < piTwo[changedOTUs[1L]])
+        {
+          piTwo <- c(piTwo[changedOTUs], rev(revPiTwoAux))
+        } else
+        {
+          piTwo <- c(rev(revPiTwoAux), piTwo[changedOTUs])
+        }
+        
+        indOtus4Balance <- tail(which(otuType < 1e-9), n = nOtus4Balance)
+        otuType[indOtus4Balance] <- -1
+      },
+      
+      "fixedOTUs" = {
+        piOneAux <- piOne[-changedOTUs]
+        aux <- piTwo[otus4Balance] - increase / length(otus4Balance)
+        if (any(aux < 0))
+        {
+          aux[aux < 0] <- 0
+          warning ("Not enough OTUs for re-normalisation.")
+        } else {}
+        
+        piTwo[otus4Balance] <- aux
+        otuType[otus4Balance] <- -1
+      }
   )# END *compensation* methods
   
   otuType <- as.factor(otuType)

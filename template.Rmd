@@ -1,46 +1,52 @@
+
 ---
 title: 'Sample Size Determination for Case-Control Microbiome Studies with Shiny'
 author: 'Federico Mattiello'
-output:
-pdf_document:
+output: pdf_document
+date: '`r format(Sys.time(), "%d/%m/%Y - %X")`'
 toc: false
 highlight: zenburn
 ---
 
 
 
-This report is automatically generated with the _R_ language 
+This report is automatically generated with the _R_ language.  
 
 
 ##INPUTS
 
 ```{r parameters, echo=FALSE}
-theta <- isolate(piOne()$'theta')
-theta <- round(as.numeric(theta), 3L)
 aux1 <- c(
   'Stratification'     = input$strata, 
-  'MonteCarlo Repl.s'           = input$MC, 
+  'MonteCarlo Repl.s' = input$MC, 
   'Pi-One type'    = input$kindPiOne, 
   'Number of OTUs'      = input$numOTUs, 
-  'Most/Least Abundant 1' = input$mostLeastAb1, 
-  'Most/Least Abundant 2' = input$mostLeastAb2, 
   'Changed OTUs 1'    = input$diffOTUs1, 
-  'Changed OTUs 2'    = input$diffOTUs2)
+  'Changed OTUs 2'    = input$diffOTUs2,
+  'Most/Least Abundant 1' = input$mostLeastAb1, 
+  'Most/Least Abundant 2' = input$mostLeastAb2)
 aux2 <- c(
-  'Rel. Abund. Diff. 1'    = paste(input$relAbund1, '%'), 
-  'Rel. Abund. Diff. 2'    = paste(input$relAbund2, '%'), 
-  'Theta'        = theta, 
-#   'Total Reads'    = input$totCounts, 
-  'Significance Level'       = input$alpha,
   'Sample 1 Size'           = input$n1, 
   'Sample 2 Size'           = input$n2, 
   'Min Sample Size'      = input$sampleSizes[1L], 
-  'Max Sample Size'      = input$sampleSizes[2L])
+  'Max Sample Size'      = input$sampleSizes[2L],
+  'Rel. Abund. Diff. 1'    = paste(input$relAbund1, '%'), 
+  'Rel. Abund. Diff. 2'    = paste(input$relAbund2, '%'), 
+  'Significance Level'       = input$alpha,
+  ' ' = ' ')
 auxMat <- cbind(names(aux1), aux1, names(aux2), aux2)
 dimnames(auxMat) <- list(NULL, rep.int(c('Description', 'Value'), 2L))
-kable(auxMat, format = 'markdown')
+kable(auxMat)#, format = 'markdown')
 ```
 
+
+Theta parameter instead is.  
+```{r thetaChunck, echo = FALSE}
+theta <- isolate(piOne()$'theta')
+theta <- round(as.numeric(theta), 3L)
+names(theta) <- names(isolate(piOne()$'piOne'))
+theta
+```
 
 
 ##OUTPUTS
@@ -50,24 +56,30 @@ kable(auxMat, format = 'markdown')
 
 The following graphs show desired ranked abundance proportions with their respective 
 estimates based on the two simulated samples of size 
-`r input$relAbund1` and `r input$relAbund1`, respectively. 
+`r input$relAbund1` and `r input$relAbund2`, respectively. 
 
-```{r piPlots, echo=FALSE, fig.height=4}
-for (strRun in seq_along(generatedCounts()$piDirList))
-  {
-  drawPiPlot(
-    countsData = generatedCounts()$piDirList[[strRun]], 
-    piOneObj = piOne()$'piOne'[[strRun]],
-    piTwoObj = piTwo()$'piTwo'[[strRun]], 
-    main = names(piOne()$'piOne')[strRun], 
-    ylab = 'Abundance Proportions', 
-    theta = round(piOne()$'theta'[[strRun]], 3L))
-  }
+```{r piPlotsSave, echo=FALSE, fig.height=4}
+# counts <- isolate(generatedCounts()$piDirList)
+counts <- NULL
+one <- isolate(piOne()$'piOne')
+two <- isolate(piTwo()$'piTwo')
+theta <- isolate(piOne()$'theta')
+for (strRun in seq_along(one))
+{
+drawPiPlot(
+  countsData = counts[[strRun]], 
+  piOneObj = one[[strRun]],
+  piTwoObj = two[[strRun]], 
+  main = names(one)[strRun], 
+  ylab = 'Abundance Proportions', 
+  theta = round(theta[[strRun]], 3L))
+}
 ```
+
 
 ###Library Size Distribution
 ```{r libSizesPlot, echo=FALSE}
-libSizeData <- totCountsGen()$nReads
+libSizeData <- isolate(totCountsGen()$nReads)
 sample1 <- density(libSizeData[[1L]])
 sample2 <- density(libSizeData[[2L]])
 plot(sample1, ylim = range(sample1$y, sample2$y), lwd = 2, 
@@ -91,15 +103,6 @@ eval(parse(text = code))
 ```
 
 
-
-###Wald Test based on one simulation  
-
-Hereafter the results of the Wald test based on one simulation:  
-```{r powOne, echo=FALSE}
-auxHmpTest()
-```  
-
-
 ###Power simulation with current settings  
 
 Power results for the current settings:
@@ -115,61 +118,163 @@ goes from `r input$sampleSizes[1L]` to `r input$sampleSizes[2L]`.
 
 ```{r powPlot, echo=FALSE, fig.cap='Power vs. Sample Size plot'}
 plot.new()
-# isolate(powPlotPoint())
+seqSizes <- isolate(mcHmpWaldResults()$'seqSizes')
+powerData <- isolate(mcHmpWaldResults()$'pow')
 
 ### interpolate points with natural splines
-## interpolated data
-lineData <- spline(
-  x = mcHmpWaldResults()$"seqSizes", 
-  y = mcHmpWaldResults()$"pow", method = "natural")
-lineData$y[lineData$y > 1] <- 1
-#            sampleVec <- seq(
-#                from = input$sampleSizes[1L], to = input$sampleSizes[2L],
-#                length = 100)
-#                findSpecificPowFun <- approxfun(
-#                    x = mcHmpWaldResults()$"seqSizes", 
-#                    y = mcHmpWaldResults()$"pow")
+## interpolated Wald data
+waldLine <- spline(
+  x = seqSizes, 
+  y = powerData[, 1L], method = 'natural')
+waldLine$y[waldLine$y > 1] <- 1
+
+if (input$'wmwTest')
+{
+  ## interpolated WMW data, total power: at least one DA detected
+  wmwLineTot <- spline(
+      x = seqSizes, 
+      y = powerData[, "W.M.W."], method = "natural")
+  wmwLineTot$y[wmwLineTot$y > 1] <- 1
+  ## interpolated WMW data, single OTU power average across DA OTUs
+  wmwLineAvg <- spline(
+      x = seqSizes, 
+      y = powerData[, "W.M.W. avg"], method = "natural")
+  wmwLineAvg$y[wmwLineAvg$y > 1] <- 1
+} else {}
+
 
 par(mar = c(4, 4, 1, 1))
-plot(mcHmpWaldResults()$"seqSizes", mcHmpWaldResults()$"pow", 
-     xlim = input$sampleSizes + c(-2L, 2L), 
-     ylim = c(0, 1.1), pch = 19, lwd = 1,
-     type = "p", #main = "Power vs. Sample Size",
-     xlab = "sample size", ylab = "power")
-lines(lineData, col = 1, lty = 1)
-abline(h = c(0, input$alpha, 1), lty = 4, col = "gray70", lwd = 2)
-text(x =  min(input$sampleSizes) + .1 * diff(input$sampleSizes), 
+if(input$powerSimStart == 0)
+  {
+  plot(0, 0 , type = 'n', xlim = input$sampleSizes, ylim = c(0, 1), 
+       xlab = 'sample size', ylab = 'power')
+  text(mean(input$sampleSizes), .5, labels = 'NOT YET STARTED', 
+       cex = 2)
+  } else {}
+
+plot(seqSizes, powerData[, "Wald"], col = "black", bg = "red2",
+    xlim = input$sampleSizes + c(-2L, 2L), 
+    ylim = c(0, 1.1), pch = 21, lwd = 2, 
+    type = "p", #main = "Power vs. Sample Size",
+    xlab = "sample size", ylab = "power", cex = 2)
+lines(waldLine, col = "red2", lty = 1, lwd = 2)
+
+if (input$"wmwTest")
+{
+  points(seqSizes, powerData[, "W.M.W."], 
+      col = "black", bg = "blue2", pch = 22, cex = 2, lwd = 2)
+  lines(wmwLineTot, col = "blue2", lty = 1, lwd = 2)
+  points(seqSizes, powerData[, "W.M.W. avg"], 
+      col = "black", bg = "blue2", pch = 23, cex = 2, lwd = 2)
+  lines(wmwLineAvg, col = "blue2", lty = 2, lwd = 2)
+  legend(x = "left", pch = 21:23, 
+      pt.bg = c("red2", "blue2", "blue2"), col = "black", 
+      lty = c(1, 1, 2), lwd = 2, pt.cex = 1.5,
+      legend = c("Wald", "WMW tot", "WMW avg"))
+} else {}
+
+
+abline(h = c(0, input$alpha, 1), lty = 4, col = 'gray70', lwd = 2)
+#text(x =  min(input$sampleSizes) + .1 * diff(input$sampleSizes), 
+text(x =  diff(input$sampleSizes), 
      y = input$alpha, pos = 3, 
-     labels = paste0("alpha=", input$alpha), cex = 1)
+     labels = paste0('alpha = ', input$alpha), cex = 1)
+
 
 
 ### draw point and lines for reading power
-xCoord <- input$sampleSizes[1L] + .75 * diff(input$sampleSizes)
+clickCoords <- list(
+  'x' = input$sampleSizes[1L] + .75 * diff(input$sampleSizes), 'y' = 0.4)
+tmpCoords <- isolate(powPlotCoords)
+
+if (!is.null(tmpCoords$x))
+{
+  clickCoords <- list('x' = tmpCoords$x, 'y' = tmpCoords$y)
+} else {}
+
+## function creating horizontal or vertical line
+lineCoords <- function(dat, direction = c('horizontal', 'vertical'))
+  {
+  if (direction == 'horizontal')
+    {
+    list('x' = c(0, dat['x']), 'y' = rep.int(dat['y'], 2L))
+    } else
+      {
+        list('x' = rep.int(dat['x'], 2L), 'y' = c(0, dat['y']))
+        }
+  }# END: function - lineCoords
+
 ## function that interpolates data
-findSpecificPowFun <- splinefun(
-  x = mcHmpWaldResults()$'seqSizes', 
-  y = mcHmpWaldResults()$'pow')
-coords <- c(
-  'x' = xCoord, 'y' = min(1, findSpecificPowFun(xCoord))
-  )
-points(as.list(coords), pch = 3, lwd = 3, cex = 1.5, col = 'red2')
-lines(x = c(coords['x'], coords['x']), 
-      y = c(0,           coords['y']), 
+specificPowFunWald <- splinefun(
+  x = seqSizes, 
+  y = powerData[, 1L])
+
+if (input$'wmwTest')
+  {
+  specificPowFunWMW <- splinefun(
+    x = seqSizes, 
+    y = powerData[, 2L])
+  } else {}
+
+coordsPointWald <- c(
+  'x' = clickCoords$x, 
+  'y' = min(1, specificPowFunWald(clickCoords$x)))
+
+if (input$'wmwTest')
+  {
+  coordsPointWMW <- c(
+    'x' = clickCoords$x, 
+    'y' = min(1, specificPowFunWMW(clickCoords$x)))
+  } else {}
+
+
+## cross corresponding to click
+points(clickCoords, pch = 3, lwd = 2, cex = 2, col = 'black')
+
+### Wald power line
+points(as.list(coordsPointWald), pch = 3, lwd = 2, cex = 1, col = 'red2')
+## horizontal line
+lines(lineCoords(coordsPointWald, direction = 'horizontal'), 
       lty = 4, col = 'red2', lwd = 2)
-lines(x = c(0,           coords['x']), 
-      y = c(coords['y'], coords['y']), 
+## vertical line
+#              lines(x = c(resCoordsWald['x'], resCoordsWald['x']), 
+#                  y = c(0, resCoordsWald['y']), 
+#                  lty = 4, col = 'red2', lwd = 2)
+lines(lineCoords(coordsPointWald, direction = 'vertical'), 
       lty = 4, col = 'red2', lwd = 2)
-text(x = coords['x'], y = coords['y'], 
+## text showing coordinates values
+#              text(x = clickCoords$x, y = clickCoords$y, 
+text(as.list(coordsPointWald), 
      labels = paste0(
-       'Size=', round(coords['x'], 2L),
-       '\n Power=', round(coords['y'], 3L)
-       ), 
-     pos = 2, offset = 1, cex = 1.2)
+       'Size=', round(clickCoords$x, 2L),
+       '\n Power=', 
+       round(coordsPointWald['y'], 3L)), 
+     pos = 3, offset = 1, cex = 1)
+
+### Wilcoxon-Mann-Whitney power line
+if (input$'wmwTest')
+  {
+  points(as.list(coordsPointWMW), pch = 3, lwd = 2, cex = 1, col = 'blue2')
+  ## horizontal line
+  lines(lineCoords(coordsPointWMW, direction = 'horizontal'), 
+        lty = 4, col = 'blue2', lwd = 2)
+  ## vertical line
+  lines(lineCoords(coordsPointWMW, direction = 'vertical'), 
+        lty = 4, col = 'blue2', lwd = 2)
+  ## text showing coordinates values
+  #                text(x = clickCoords$x, y = clickCoords$y, 
+  text(as.list(coordsPointWMW), 
+       labels = paste0(
+         'Size=', round(clickCoords$x, 2L),
+         '\n Power=', 
+         round(coordsPointWMW['y'], 3L)), 
+       pos = 3, offset = 1, cex = 1)
+  }# END: if - WMW test
 ```
 
 
 ---------------------------------------------------------------------------  
-
+\newpage
 
 ##R Session Information  
 

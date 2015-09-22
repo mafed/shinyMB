@@ -1,4 +1,4 @@
-################################################################################
+################## in##############################################################
 ### Title: server.R                                              ###
 ###                                                                          ###
 ### Project: MicrobiomeTry                                                ###
@@ -26,22 +26,63 @@
 #metaData <- read.table("v13_map_uniquebyPSN.txt", HMPbodysubsite)
 
 #rm(list = ls()); gc(reset = TRUE)
-#source("./shinyMB/www/auxCode.R")
+#setwd("./shinyMB/")
 
 
 source("./www/auxCode.R")
 
 
-### manual input for testing purposes
-#rm(list = ls()); gc(reset = TRUE)
-# input <- list(strata = "YES", MC = 100,
-#    kindPiOne = "Stool", numOTUs = 50, 
+#### manual input for testing purposes
+### H_0 to test FDR
+#input <- list(strata = "NO", MC = 50, "wmwTest" = TRUE,
+#    kindPiOne = "Stool", numOTUs = 30, simulatedPiOne = FALSE,
 #    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
 #    diffOTUs1 = 2, diffOTUs2 = 3,
-#    relAbund1 = 33, relAbund2 = 25, 
-#    n1 = 41, n2 = 45, theta = 0.01, totCounts = 1e4, 
+#    relAbund1 = 0, relAbund2 = 0, 
+#    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
+#    seed = 12345, alpha = .1,
+#    sampleSizes = c(20, 90), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+#
+### effect size at minimum
+#input <- list(strata = "YES", MC = 100, "wmwTest" = TRUE,
+##input <- list(strata = "YES", MC = 50, "wmwTest" = TRUE,
+#    kindPiOne = "Stool", numOTUs = 50, simulatedPiOne = FALSE,
+#    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
+#    diffOTUs1 = 2, diffOTUs2 = 2,
+#    relAbund1 = 15, relAbund2 = 20, 
+#    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
+#    seed = 12345, alpha = .1,
+#    sampleSizes = c(20, 70), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+#
+### effect size with over AND under abundance
+#input <- list(strata = "YES", MC = 50, "wmwTest" = TRUE,
+#    kindPiOne = "Stool", numOTUs = 30, simulatedPiOne = FALSE,
+#    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
+#    diffOTUs1 = 2, diffOTUs2 = 3,
+#    relAbund1 = -30, relAbund2 = 20, 
+#    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
 #    seed = 12345, alpha = .1,
 #    sampleSizes = c(10, 40), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+#
+### effect size like in the paper
+#input <- list(strata = "YES", MC = 1000, "wmwTest" = TRUE,
+#    kindPiOne = "Stool", numOTUs = 50, simulatedPiOne = FALSE,
+#    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
+#    diffOTUs1 = 2, diffOTUs2 = 2,
+#    relAbund1 = 20, relAbund2 = 30, 
+#    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
+#    seed = 12345, alpha = .1,
+#    sampleSizes = c(10, 40), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+#
+#input <- list(strata = "NO", MC = 1000, "wmwTest" = TRUE,
+#    kindPiOne = "Stool", numOTUs = 50, simulatedPiOne = FALSE,
+#    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
+#    diffOTUs1 = 2, diffOTUs2 = 2,
+#    relAbund1 = 20, relAbund2 = 0, 
+#    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
+#    seed = 12345, alpha = .1,
+#    sampleSizes = c(10, 40), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+
 
 
 ### 
@@ -120,28 +161,36 @@ shinyServer(
               ## set first column as rownames then remove it, first column must 
               ## contain observations IDs
               inFile <- input$userFiles
-              inData <- read.csv(inFile$datapath[1L], header = TRUE)
-              rownames(inData) <- inData[, 1L]
-              inData <- inData[, -1]
+              
+              inData <- read.table(inFile$datapath[1L], header = TRUE, row.names = 1,
+                  sep = input$sep, quote = input$quote, check.names = FALSE)
+              inData <- t(as.matrix(inData))
+              
+              if (input$strataRow)
+              {
+                strata <- as.factor(inData[, 1L])
+                inData <- inData[, -1]
+              } else {}
+              
+              dimNames <- dimnames(inData)
+              inData <- apply(inData, 2, as.integer)
+              dimnames(inData) <- dimNames
               
               if(input$strata == "NO")
               {
                 ## standardisation if the dataset is in the format "obs x OTUs"
-                aux <- as.matrix(inData[, -1L])
-                ord <- order(colSums(aux), decreasing = TRUE)
+                ord <- order(colSums(inData), decreasing = TRUE)
                 maxNumOTU <- min(length(ord), input$numOTUs)
-                aux <- aux[, ord[seq_len(maxNumOTU)]]
+                aux <- inData[, ord[seq_len(maxNumOTU)]]
                 piVec <- list(msWaldHMP:::piMoM4Wald(aux))
                 theta <- list(msWaldHMP:::weirMoM4Wald(aux))
                 nReadsFromData <- list(rowSums(inData), rowSums(inData))
               } else
               {
-                strata <- as.factor(inData[, 1L])
                 piVec <- vector("list", nlevels(strata))
                 theta <- vector("list", nlevels(strata))
                 names(piVec) <- names(theta) <- levels(strata)
                 nReadsFromData <- piVec
-                inData <- inData[, -1]
                 nReadsTmp <- rowSums(inData)
                 
                 for (stratumRun in levels(strata))
@@ -167,7 +216,7 @@ shinyServer(
       
       
       ### rest of the code
-#      changedOTUs <- 1L:5
+#      changedOTUs <- function() 1L:5
       changedOTUs <- reactive({
             otus2Change <- seq_len(input$diffOTUs1 + input$diffOTUs2)
             nOtus <- length(piOne()$"piOne"[[1L]])
@@ -189,6 +238,7 @@ shinyServer(
           })
       
       rho <- reactive({
+#            rho <- 
             rhoGenSpecOtus(
                 K = input$numOTUs, 
                 m1 = input$diffOTUs1, m2 = input$diffOTUs2, 
@@ -199,34 +249,12 @@ shinyServer(
       
       
       piTwo <- reactive({
-#            tmp <- lapply(piOne$"piOne", FUN = piTwoGen, rho = rho)
             tmp <- lapply(piOne()$"piOne", FUN = piTwoGen, rho = rho())
-#            piTwo <-
+#            tmp <- lapply(piOne$"piOne", FUN = piTwoGen, rho = rho)
+#            piTwo <- 
             list(
                 "piTwo" = lapply(tmp, elNamed, name = "piTwo"),
                 "otuType" = lapply(tmp, elNamed, name = "otuType"))
-          })
-      
-      
-      output$piPlot <-  renderPlot({
-            obj1 <- piOne()$"piOne"[[1L]]
-            obj2 <- piTwo()$"piTwo"[[1L]]
-            
-            par(mar = c(4, 4, 1, 0) + .1)
-            plot(obj1, pch = 1, col = 1, lwd = 2, 
-                ylim = c(0, max(obj1, obj2)),
-                xlab = "OTU Index", ylab = "Abundances", 
-#                main = expression(paste("Ranked Abundances for ", pi[1])),
-                cex.lab = 1.2, lty = 1:2)
-            lines(obj1, lwd = 1, col = 1)
-            points(obj2, pch = 3, lwd = 2, col = 2)
-            lines(obj2, lwd = 1, col = 2, lty = 2)
-            abline(h = 0, lty = 4, col = "gray60", lwd = 2)
-            legend(x = "topright", pch = c(1, 3), col = c(1, 2), pt.lwd = 2,
-                lwd = 2, lty = 1:2,
-                legend = c(expression(pi[1]), 
-                    expression(paste(pi[2], ""))
-                ))
           })
       
       
@@ -245,84 +273,34 @@ shinyServer(
           })
       
       
-      ### Dirichlet-Multinomial counts generation
-      generatedCounts <- reactive({
-#            countsGen(
-#                sampleSizes = c(input$n1, input$n2), 
-#                alphas = cbind(piOne()$"piOne"[[1L]], piTwo()[[1L]]$"piTwo"), 
-#                theta = piOne()$"theta"[[1L]], 
-#                K = length(piOne()$"piOne"[[1L]]), 
-#                N = input$totCounts, 
-#                seed = 12345)    # input$seed
-            
-#            obj1 <- piOne$"piOne"
-            obj1 <- piOne()$"piOne"
-            type <- input$kindPiOne
-            
-            ## check if random library size or not
-            if (piOne()$"simulatedPiOne")
-            {
-              libSizes <- list(
-                  round(
-                      rgamma(input$n1, shape = 3.5, rate = 7e-4), 
-                      digits = 0L), 
-                  round(
-                      rgamma(input$n2, shape = 3.5, rate = 7e-4), 
-                      digits = 0L) 
-              )
-              tmpLibSize <- list(0)
-              names(tmpLibSize) <- type
-            } else
-            {
-              load("./data/librarySizes.RData")
-              tmpLibSize <- libSizesOrigRaref[[type]]
-              inds <- tmpLibSize > 2000
-              tmpLibSize <- tmpLibSize[inds]
-              libSizes <- list(
-                  sample(tmpLibSize, size = input$n1, replace = TRUE), 
-                  sample(tmpLibSize, size = input$n2, replace = TRUE))
-            }#END - ifelse: libSizes
-            
-            aux <- lapply(seq_along(obj1), FUN = function(i, obj1, obj2)
-                {
-                  countsGen(
-                      sampleSizes = c(input$n1, input$n2),
-                      alphas = cbind(obj1[[i]], obj2[[i]]),
-#                      theta = piOne$"theta"[[i]],
-                      theta = piOne()$"theta"[[i]],
-                      K = length(obj1[[i]]),
-                      N = input$totCounts,
-                      seed = 12345, libSizes = libSizes)
-#                }, obj1 = obj1, obj2 = piTwo$"piTwo")
-                }, obj1 = obj1, obj2 = piTwo()$"piTwo")
-            
-#            generatedCounts <- 
-            list(
-                "dmDataList" = lapply(aux, elNamed, name = "dmDataList"),
-                "piDirList" = lapply(aux, elNamed, name = "piDirList"),
-                "libSizes" = list(libSizes),
-                "libSizesOrig" = tmpLibSize)
-          })
-      
       ### plot for generated pi RADs
       piPlot1 <- reactive({
             main <- ifelse(test = input$strata == "YES", 
+#                yes = names(piOne$"piOne")[1L], 
                 yes = names(piOne()$"piOne")[1L], 
                 no = "")
 #                no = "Ranked Abundance Distribution")
-            
 #            pdf(file = "plotRad.pdf", width = 8, height = 6)
-#            svg(file = "plotRad.svg", width = 8, height = 6)
+#            jpeg(file = "plotRadsStrata.jpg", width = 800, height = 600, 
+#                pointsize = 16, quality = 90)
 #            png(file = "plotRad.png", width = 1000, height = 750, pointsize = 24)
+#            layout(1:3)
+#            for (i in 1:3)
             drawPiPlot(
-                countsData = generatedCounts()$piDirList[[1L]], 
+#                countsData = generatedCounts()$piDirList[[1L]], 
+                countsData = NULL, 
+#                piOneObj =    piOne$"piOne"[[i]],
+#                piTwoObj =    piTwo$"piTwo"[[i]],  
+#                main =  names(piOne$"piOne")[i],
+#                theta = round(piOne$"theta"[[i]], 3L),
+#                ylab = "Abundance Proportions") 
+                ylab = "Abundance Proportions",
                 piOneObj = piOne()$"piOne"[[1L]],
                 piTwoObj = piTwo()$"piTwo"[[1L]], main = main, 
-                ylab = "Abundance Proportions", 
                 theta = round(piOne()$"theta"[[1L]], 3L))
 #            dev.off()
-            
           })
+      
       output$estPiPlot <- renderPlot({
             piPlot1()
           })
@@ -332,7 +310,8 @@ shinyServer(
             if (input$strata == "YES" && length(piOne()$"piOne") > 1L)
             {
               drawPiPlot(
-                  countsData = generatedCounts()$piDirList[[2L]], 
+#                  countsData = generatedCounts()$piDirList[[2L]], 
+                  countsData = NULL, 
                   piOneObj = piOne()$"piOne"[[2L]],
                   piTwoObj = piTwo()$"piTwo"[[2L]], 
 #                  main = "Enterotype: 'Prevotella'", 
@@ -350,7 +329,8 @@ shinyServer(
             if (input$strata == "YES" && length(piOne()$"piOne") > 2L)
             {
               drawPiPlot(
-                  countsData = generatedCounts()$piDirList[[3L]], 
+#                  countsData = generatedCounts()$piDirList[[3L]], 
+                  countsData = NULL, 
                   piOneObj = piOne()$"piOne"[[3L]],
                   piTwoObj = piTwo()$"piTwo"[[3L]], 
 #                  main = "Enterotype: 'Ruminococcus'", 
@@ -359,154 +339,132 @@ shinyServer(
                   theta = round(piOne()$"theta"[[3L]], 3L))
             } else {}
           })
+      
       output$estPiPlot3 <- renderPlot({
             piPlot3()
           })
       
       
       
-      ### Single run differential abundance test
-      auxHmpTest <- reactive({
-#            nOtus <- sapply(piOne$"piOne", length)
-            nOtus <- sapply(piOne()$"piOne", length)
-#            nReads <- generatedCounts$"libSizes"
-            nReads <- generatedCounts()$"libSizes"
-            thetaMoM <- sapply(generatedCounts()$"dmDataList", 
-                FUN = function(x) sapply(x, FUN = msWaldHMP:::weirMoM4Wald))
-            piMoM <- lapply(generatedCounts()$"dmDataList", 
-                FUN = function(x) sapply(x, FUN = msWaldHMP:::piMoM4Wald))
-            names(piMoM) <- names(piOne()$"piOne")
-            
-            wald <- drop(msWaldHMP:::msWald(nReads, alphaDM = piMoM, thetaDM = thetaMoM))
-            
-            DoFs <- (length(el(nReads)) - 1) * (nOtus[1L] - 1)
-            pVal <- pchisq(q = wald, df = DoFs, ncp = 0, lower.tail = FALSE)
-            
-            aux <- c(wald, pVal)
-            
-            tmp <- matrix(aux, nrow = 2, byrow = TRUE,
-                dimnames = list(c("Test Stat.", "p.value"), names(wald)))
-            
-            
-            ## global test, just sum up the Chi-squares values and DoFs
-            if (length(wald) > 1L)
-            {
-              pValTot <- pchisq(q = sum(wald), df = length(wald) * DoFs[1L], 
-                  lower.tail = FALSE)
-              tmp <- cbind(tmp, "Global" = c(sum(wald), pValTot))
-#              colnames(tmp) <- c(paste0("Ent.", seq_along(wald)), "Global")
-#              c("Global Test" = sum(wald), "Global p.value" = pValTot)
-              round(t(tmp), 4L)
-              
-            } else
-            {
-              round(tmp[, 1], 3L)
-            }
-          })
       
-      output$hmpDiffTest <- renderPrint({
-            auxHmpTest()
-          })
-      
-      
+      ### generation of all MC counts datasets
       totCountsGen <- reactive({
             set.seed(12345)
-#            input$mcStart
-#            input$powerSimStart
-            input$n1
-            input$n1
-            input$sampleSizes
-            type <- input$kindPiOne
-            maxSampSize1 <- max(input$n1, input$sampleSizes)
-            maxSampSize2 <- max(input$n2, input$sampleSizes)
+#            input$n1
+#            input$n2
+#            input$sampleSizes
+#            input$MC
+#            piOne()
             
-            ## check if random library size or not
-            if (piOne()$"simulatedPiOne")
-            {
-              nReads <- list(
-                  round(
-                      rgamma(maxSampSize1, shape = 3.5, rate = 7e-4), 
-                      digits = 0L), 
-                  round(
-                      rgamma(maxSampSize2, shape = 3.5, rate = 7e-4), 
-                      digits = 0L) 
-              )
-              tmpLibSize <- list(0)
-              names(tmpLibSize) <- type
-            } else
-            {
-#              if (is.null(piOne()$"nReadsFromData"))
-#              {
-#              } else
-#              {
-#                tmpLibSize <- piOne()$"nReadsFromData"
-#              }# END - ifelse: library sizes taken from user-uploaded data
-              load("./data/librarySizes.RData")
-              tmpLibSize <- libSizesOrigRaref[[type]]
-              inds <- tmpLibSize > 2000
-              tmpLibSize <- tmpLibSize[inds]
-              nReads <- list(
-                  sample(tmpLibSize, size = maxSampSize1, replace = TRUE), 
-                  sample(tmpLibSize, size = maxSampSize2, replace = TRUE))
-            }#END - ifelse: libSizes
-            
-            
-#            nOtus   <- length(piOne$"piOne"[[1L]])
-#            nStrata <- length(piOne$"piOne")
-#            nGroups <- length(generatedCounts$"dmDataList"[[1L]])
-            nOtus   <- length(piOne()$"piOne"[[1L]])
-            nStrata <- length(piOne()$"piOne")
-            nGroups <- 2L        # length(generatedCounts()$"dmDataList"[[1L]])
-            
-#            obj1 <-  piOne$"piOne"
-#            obj2 <-  piTwo$"piTwo"
-#            theta <- piOne$"theta"
-            obj1 <-  piOne()$"piOne"
-            obj2 <-  piTwo()$"piTwo"
-            theta <- piOne()$"theta"
-            
-            withProgress(message = "Generating data...", 
-                value = 0, min = 0, max = 1,
-                expr = {
-                  setProgress(0)
-                  totData <- lapply(seq_len(input$MC), 
-                      FUN = function(x)
-                      {
-#                        setProgress(round(x/input$MC, 2L))
-#                        incProgress(round(1/input$MC, 2L))
-                        tmp <- vector("list", length(obj1))
-                        names(tmp) <- names(obj1)
-                        for (stratumRun in seq_along(obj1))
-                        {
-                          tmp[[stratumRun]] <- countsGen(
+#            isolate({
+                  type <- input$kindPiOne
+                  maxSampSize1 <- max(input$n1, input$sampleSizes)
+                  maxSampSize2 <- max(input$n2, input$sampleSizes)
+                  
+                  ## check if random library size or not
+#                if (piOne()$"simulatedPiOne")
+#                {
+#                  nReads <- list(
+#                      round(
+#                          rgamma(maxSampSize1, shape = 3.5, rate = 7e-4), 
+#                          digits = 0L), 
+#                      round(
+#                          rgamma(maxSampSize2, shape = 3.5, rate = 7e-4), 
+#                          digits = 0L) 
+#                  )
+#                  tmpLibSize <- list(0)
+#                  names(tmpLibSize) <- type
+#                } else
+#                {
+                  #              if (is.null(piOne()$"nReadsFromData"))
+                  #              {
+                  #              } else
+                  #              {
+                  #                tmpLibSize <- piOne()$"nReadsFromData"
+                  #              }# END - ifelse: library sizes taken from user-uploaded data
+                  if (piOne()$"simulatedPiOne")
+                  {
+                    type <- "Stool"
+                  } else {}
+                  
+                  load("./data/librarySizes.RData")
+                  tmpLibSize <- libSizesOrigRaref[[type]]
+                  inds <- tmpLibSize > input$numOTUs     #2000
+                  tmpLibSize <- tmpLibSize[inds]
+                  nReads <- list(
+                      sample(tmpLibSize, size = maxSampSize1, replace = TRUE), 
+                      sample(tmpLibSize, size = maxSampSize2, replace = TRUE))
+#                }#END - ifelse: simulatedPiOne libSizes
+                  
+                  
+                  # nOtus   <- length(piOne$"piOne"[[1L]])
+                  # nStrata <- length(piOne$"piOne")
+                  # nGroups <- 2L
+                  nOtus   <- length(piOne()$"piOne"[[1L]])
+                  nStrata <- length(piOne()$"piOne")
+                  nGroups <- 2L        # length(generatedCounts()$"dmDataList"[[1L]])
+                  
+                  # obj1 <-  piOne$"piOne"
+                  # obj2 <-  piTwo$"piTwo"
+                  # theta <- piOne$"theta"
+                  obj1 <-  piOne()$"piOne"
+                  obj2 <-  piTwo()$"piTwo"
+                  theta <- piOne()$"theta"
+                  
+                  withProgress(message = "Generating data...", 
+                      value = 0, min = 0, max = 1,
+                      expr = {
+                        setProgress(0)
+                        totData <- lapply(seq_len(input$MC), 
+                            FUN = function(x)
+                            {
+                              incProgress(round(1/input$MC, 2L))
+                              tmp <- vector("list", length(obj1))
+                              names(tmp) <- names(obj1)
+                              for (stratumRun in seq_along(obj1))
+                              {
+                                tmp[[stratumRun]] <- countsGen(
 #                              sampleSizes = c(input$n1, input$n2),
-                              sampleSizes = c(maxSampSize1, maxSampSize2),
-                              alphas = cbind(
-                                  obj1[[stratumRun]], obj2[[stratumRun]]),
-                              theta = theta[[stratumRun]],
-                              K = nOtus,
+                                    sampleSizes = c(maxSampSize1, maxSampSize2),
+                                    alphas = cbind(
+                                        obj1[[stratumRun]], obj2[[stratumRun]]),
+                                    theta = theta[[stratumRun]],
+                                    K = nOtus,
 #                                      N = input$totCounts,
-                              seed = NA, libSizes = nReads)
-                        }# END - for: strata
-                        lapply(tmp, elNamed, name = "dmDataList")
-                      }# END - function: lapply generation
-                  )# END - lapply: totData
-                })# END - withProgress: end simulations
+                                    seed = NA, libSizes = nReads)
+                              }# END - for: strata
+                              lapply(tmp, elNamed, name = "dmDataList")
+                            }# END - function: lapply generation
+                        )# END - lapply: totData
+                      })# END - withProgress: end simulations
 #            totCountsGen <- 
-            c(totData, "nReads" = list(nReads))
+                  c(totData, "nReads" = list(nReads))
+#                })
           })
+      
+      
       
       ### power calculation among MC replications with settings already defined
       auxSingleWald <- reactive({
             input$mcStart
-            set.seed(12345)
             
             isolate({
-                  nSubsets <- 1L
                   dataList <- totCountsGen()
+                  wmwTest <- input$"wmwTest"
+#                 dataList <- totCountsGen
+                  set.seed(12345)
+                  nSubsets <- 1L
+                  mcReps <- length(dataList) - 1L
                   nStrata <- length(dataList[[1L]])
                   nGroups <- length(dataList[[c(1L, 1L)]])
                   nOtus <- ncol(dataList[[c(1L, 1L, 1L)]])
+#                  h1OTUs <- changedOTUs()
+#                  h1OTUs <- which(el(piTwo$otuType) %in% 1L:2)
+                  h1OTUs <- which(el(piTwo()$otuType) %in% 1L:2)
+                  if (length(h1OTUs) == 0L)
+                  {
+                    h1OTUs <- seq_len(input$numOTUs)
+                  } else {}
 #                  nReads <- list(
 #                      rep.int(input$totCounts, input$n1), 
 #                      rep.int(input$totCounts, input$n2))
@@ -535,19 +493,20 @@ shinyServer(
                       tmpReads[[1L]][seq_len(input$n1)], 
                       tmpReads[[2L]][seq_len(input$n2)])
                   
-                  tmpWald <- rep.int(NA, nStrata)
-                  names(tmpWald) <- names(dataList[[1L]]) 
+#                  tmpWald <- rep.int(NA, nStrata)
+#                  names(tmpWald) <- names(dataList[[1L]])
+                  
                   
                   withProgress(message = "Computing...", 
                       value = 0, min = 0, max = 1,
                       expr = {
                         setProgress(0)
-                        resTot <- sapply(seq_len(input$MC), 
+                        resTot <- sapply(seq_len(mcReps), 
                             FUN = function(mcRun)
                             {
-#                              setProgress(round(mcRun/input$MC, 2L))
-                              incProgress(round(1/input$MC, 2L))
-                              tmpWald[] <- NA
+                              incProgress(round(1/mcReps, 2L))
+#                              tmpWald[] <- NA
+                              tmpWald <- rep.int(NA, nStrata)
                               for (strRun in seq_len(nStrata))
                               {
                                 aux <- list(
@@ -563,45 +522,114 @@ shinyServer(
                       })# END - withProgress
                   
                   resTot <- as.matrix(resTot)
-                  if (ncol(resTot) > 1 && is.null(rownames(resTot)))
-                  {
-                    rownames(resTot) <- names(dataList[[1L]])
-                  } else {}
                   
-                  ### quantiles of the reference distribution
-                  ## Degrees of Freedom
-                  DoF <- (nGroups - 1) * (nOtus - 1)
-                  globDoF <- (nGroups - 1) * (nOtus * nStrata - 1)
                   
-                  pValTot <- pchisq(q = resTot, df = DoF, lower.tail = FALSE)
-                  
-                  ## multiplicity correction and sum up together strata
-                  if (nStrata > 1L)
+                  ## in case Wilcoxon-Mann-Whitney is desired
+                  if (wmwTest)
                   {
-                    pValTot <- t(apply(pValTot, MARGIN = 2, FUN = p.adjust, 
-                            method = "holm"))
-                    pValGlob <- pchisq(q = colSums(resTot), df = globDoF, 
-                        lower.tail = FALSE)
-                    rejTot <- c(
-                        colMeans(pValTot <= input$alpha), 
-                        "Global" = mean(pValGlob <= input$alpha))
-                    rejTot <- as.matrix(rejTot)
-                    colnames(rejTot) <- "Power"
-                  } else
-                  {
-                    rejTot <- colMeans(pValTot <= input$alpha)
-                  }
-                  
-                  if (length(rejTot) == 1L)
-                  {
-                    names(rejTot) <- "Value"
-                  } else {}
+                    resWMW <- array(NA, dim = c(nOtus, nStrata, mcReps))
+                    
+                    withProgress(message = "Computing WMW...", 
+                        value = 0, min = 0, max = 1,
+                        expr = {
+                          setProgress(0)
+                          auxWMW <- sapply(seq_len(mcReps), 
+                              FUN = function(mcRun)
+                              {
+#                              setProgress(round(mcRun/mcReps, 2L))
+                                incProgress(round(1/mcReps, 2L))
+                                for (strRun in seq_len(nStrata))
+                                {
+                                  resWMW[, strRun, mcRun] <<- msWaldHMP:::wrapperWMW(
+                                      x = dataList[[c(mcRun, strRun, 1L)]][seq_len(input$n1), ],
+                                      y = dataList[[c(mcRun, strRun, 2L)]][seq_len(input$n2), ],
+                                      adjMethod = "fdr")
+                                }# END - for: strata
+                              })# END - lapply: auxWMW
+                        })# END - withProgress
+                  } else {}# END - if: WMW test
                 })# END - isolate
+                
+                
+            ### organise results
+            if (NCOL(resTot) > 1 && is.null(rownames(resTot)))
+            {
+              rownames(resTot) <- names(dataList[[1L]])
+            } else {}
             
-            round(rejTot, 3L)
+            ### quantiles of the reference distribution
+            ## Degrees of Freedom
+            DoF <- (nGroups - 1) * (nOtus - 1)
+            globDoF <- (nGroups - 1) * (nOtus * nStrata - 1)
+            
+            pValTot <- pchisq(q = resTot, df = DoF, lower.tail = FALSE)
+            
+            ## multiplicity correction and sum up together strata
+            if (nStrata > 1L)
+            {
+              pValTot <- t(apply(pValTot, MARGIN = 2, FUN = p.adjust, 
+                      method = "fdr"))
+              pValGlob <- pchisq(q = colSums(resTot), df = globDoF, 
+                  lower.tail = FALSE)
+              powTotWald <- c(
+                  colMeans(pValTot <= input$alpha), 
+                  "Global" = mean(pValGlob <= input$alpha))
+              powTotWald <- as.matrix(powTotWald)
+              colnames(powTotWald) <- "Power"
+            } else
+            {
+              powTotWald <- colMeans(pValTot <= input$alpha)
+            }
+            
+            if (length(powTotWald) == 1L)
+            {
+              names(powTotWald) <- "Value"
+            } else {}
+            
+            
+            ## in case Wilcoxon-Mann-Whitney is desired
+            if (wmwTest)
+            {
+              ## select only Differentially Abundant OTUs
+              resWMW <- resWMW[h1OTUs, , , drop = FALSE]
+              ## power for each DA OTU, averaged across all DA OTUs
+              singleOtuRej <- rowMeans(resWMW <= input$alpha, na.rm = TRUE, 
+                  dims = 2L)
+              powAvgWMW <- colMeans(singleOtuRej)
+              ## at least one rejection among DA OTUs
+              tmpRej <- colSums(resWMW <= input$alpha, na.rm = TRUE, dims = 1L)
+              powTotWMW <- rowMeans(tmpRej > 0)
+              
+#              tmpOtuWMW <- apply(resWMW <= input$alpha, MARGIN = c(1L, 3), sum, 
+#                  na.rm = TRUE)
+#              rejOtuWMW <- rowMeans(tmpOtuWMW > 0)
+              
+              if (nStrata > 1L)
+              {
+#               auxRej <- colSums(tmpRej, na.rm = FALSE, dims = 1L) > 0
+                auxRej <- apply(resWMW, c(1L, 3L), p.adjust, method = "fdr")
+                globRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 2L)
+                powTotWMW <- c(powTotWMW, mean(globRej > 0))
+                globAvgRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 1L)
+                globAvgRej <- mean(rowMeans(globAvgRej > 0))
+                powAvgWMW <- c(powAvgWMW, globAvgRej)
+              } else {}
+              
+              totOut <- cbind(round(powTotWald, 3L), round(powTotWMW, 3L), 
+                  round(powAvgWMW, 3L))
+              colnames(totOut) <- c("Wald", "W.M.W.", "W.M.W. avg")
+            } else
+            {
+              totOut <- round(powTotWald, 3L)
+            }# END - if: WMW test
+            
+            totOut
           })# END - auxSingleWald
       
       output$singleMcWaldResults <- renderPrint({
+#      output$singleMcWaldResults <- renderTable({
+#            input$mcStart
+#            which(el(piTwo()$otuType) %in% 1L:2)
             auxSingleWald()
           })
       
@@ -615,8 +643,16 @@ shinyServer(
             
             set.seed(12345)
             isolate({
-                  nSubsets <- 7L
                   dataList <- totCountsGen()
+#                  dataList <- totCountsGen
+#                  h1OTUs <- changedOTUs()
+                  h1OTUs <- which(el(piTwo()$otuType) %in% 1L:2)
+                  if (length(h1OTUs) == 0L)
+                  {
+                    h1OTUs <- seq_len(input$numOTUs)
+                  } else {}
+                  nSubsets <- 7L
+                  mcReps <- length(dataList) - 1L
                   nStrata <- length(dataList[[1L]])
                   nGroups <- length(dataList[[c(1L, 1L)]])
                   nOtus <- ncol(dataList[[c(1L, 1L, 1L)]])
@@ -624,26 +660,25 @@ shinyServer(
                       seq(from = input$sampleSizes[1L], to = input$sampleSizes[2L], 
                           length = nSubsets))
                   
-                  ## check if random library size or not
-                  if (piOne()$"simulatedPiOne")
-                  {
-                    nReads <- lapply(seq_along(sampleSizes), FUN = function(i)
-                        {
-                          list(
-                              round(
-                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
-                                  digits = 0L), 
-                              round(
-                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
-                                  digits = 0L)
-                          )
-                        })
-                  } else
-                  {
-                    tmpReads <- dataList$"nReads"
-                    nReads <- lapply(seq_along(sampleSizes), 
-                        FUN = function(i)
-                        {
+## check if random library size or not
+#                  if (piOne()$"simulatedPiOne")
+#                  {
+#                    nReads <- lapply(seq_along(sampleSizes), FUN = function(i)
+#                        {
+#                          list(
+#                              round(
+#                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
+#                                  digits = 0L), 
+#                              round(
+#                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
+#                                  digits = 0L))
+#                        })
+#                  } else
+#                  {
+                  tmpReads <- dataList$"nReads"
+                  nReads <- lapply(seq_along(sampleSizes), 
+                      FUN = function(i)
+                      {
 #                          list(
 #                              sample(generatedCounts()$"libSizesOrig", 
 #                                  size = sampleSizes[i], 
@@ -651,29 +686,36 @@ shinyServer(
 #                              sample(generatedCounts()$"libSizesOrig", 
 #                                  size = sampleSizes[i], 
 #                                  replace = TRUE))
-                          list(
-                              tmpReads[[1L]][seq_len(sampleSizes[i])], 
-                              tmpReads[[2L]][seq_len(sampleSizes[i])]) 
-                        })
-                    names(nReads) <- sampleSizes
-                  }#END - ifelse: simulatedPiOne, libSizes
+                        list(
+                            tmpReads[[1L]][seq_len(sampleSizes[i])], 
+                            tmpReads[[2L]][seq_len(sampleSizes[i])]) 
+                      })
+                  names(nReads) <- sampleSizes
+#                  }#END - ifelse: simulatedPiOne, libSizes
                   
-                  tmpWald <- matrix(NA, nrow = nSubsets, ncol = nStrata)
-                  rownames(tmpWald) <- sampleSizes
-                  colnames(tmpWald) <- names(dataList[[1L]])
+#                  tmpWald <- matrix(NA, nrow = nSubsets, ncol = nStrata)
+#                  rownames(tmpWald) <- sampleSizes
+#                  colnames(tmpWald) <- names(dataList[[1L]])
+                  
+                  resArr <- array(NA, dim = c(nSubsets, nStrata, mcReps), 
+                      dimnames = list(sampleSizes, names(dataList[[1L]]), 
+                          paste0("MC", seq_len(mcReps))))
+#                  for (mcRun in seq_along(resTot))
+#                    resArr[, , mcRun] <- resTot[[mcRun]]
                   
                   withProgress(message = "Computing...", 
                       value = 0, min = 0, max = 1,
                       expr = {
                         setProgress(0)
-                        resTot <- lapply(seq_len(input$MC), 
+#                        resTot <- lapply(seq_len(mcReps), 
+                        auxTot <- lapply(seq_len(mcReps), 
                             FUN = function(mcRun)
                             {
-#                              setProgress(round(mcRun/input$MC, 2L))
-                              incProgress(round(1/input$MC, 2L))
+#                              setProgress(round(mcRun/mcReps, 2L))
+                              incProgress(round(1/mcReps, 2L))
                               for (ssRun in seq_along(sampleSizes))
                               {
-                                tmpWald[ssRun, ] <- sapply(dataList[[mcRun]], 
+                                resArr[ssRun, , mcRun] <<- sapply(dataList[[mcRun]], 
                                     FUN = function(dat)
                                     {
                                       tmp <- list(
@@ -683,18 +725,11 @@ shinyServer(
                                       piAux <- sapply(tmp, msWaldHMP:::piMoM4Wald)
                                       msWaldHMP:::msWaldStat(nReads[[ssRun]], piAux, thAux)
                                     })
-                              }# END - for: strata
-                              tmpWald
+                              }# END - for: sampleSizes
+#                              tmpWald
                             })# END - lapply: mcRun
                       })# END - withProgress
                   
-                  resArr <- array(NA, dim = c(nSubsets, nStrata, input$MC), 
-                      dimnames = list(rownames(resTot[[1L]]), colnames(resTot[[1L]]), 
-                          paste0("MC", seq_len(input$MC))))
-                  for (mcRun in seq_along(resTot))
-                  {
-                    resArr[, , mcRun] <- resTot[[mcRun]]
-                  }
                   
                   ## Degrees of Freedom
                   DoF <- (nGroups - 1) * (nOtus - 1)
@@ -705,19 +740,105 @@ shinyServer(
                   if (nStrata > 1L)
                   {
                     pValTot <- apply(pValTot, MARGIN = c(1, 3), FUN = p.adjust, 
-                        method = "holm")
+                        method = "fdr")
                     pValTot <- aperm(pValTot, c(3, 1, 2))
                     pValGlob <- pchisq(q = apply(resArr, c(1, 3), sum), df = globDoF, 
                         lower.tail = FALSE)
-                    rejTot <- rbind(
+                    powTotWald <- rbind(
                         colMeans(pValTot <= input$alpha),
                         "Global" = rowMeans(pValGlob <= input$alpha))
                   } else
                   {
-                    rejTot <- rowMeans(drop(pValTot) <= input$alpha)
+                    powTotWald <- rowMeans(drop(pValTot) <= input$alpha)
                   }# END - ifelse: nStrata
                   
                   
+                  ## in case Wilcoxon-Mann-Whitney is desired
+                  if (input$"wmwTest")
+                  {
+                    resArrWMW <- array(NA, 
+                        dim = c(nOtus, nStrata, nSubsets, mcReps), 
+                        dimnames = list(
+                            colnames(dataList[[c(1L, 1L, 1L)]]), 
+                            names(dataList[[1L]]), 
+                            sampleSizes, 
+                            paste0("MC", seq_len(mcReps))))
+                    
+                    withProgress(message = "Computing power WMW...", 
+                        value = 0, min = 0, max = 1,
+                        expr = {
+                          setProgress(0)
+#                        resTot <- lapply(seq_len(mcReps), 
+                          auxTot <- lapply(seq_len(mcReps), 
+                              FUN = function(mcRun)
+                              {
+#                              setProgress(round(mcRun/mcReps, 2L))
+                                incProgress(round(1/mcReps, 2L))
+                                for (ssRun in seq_along(sampleSizes))
+                                {
+                                  resArrWMW[, , ssRun, mcRun] <<- 
+                                      sapply(dataList[[mcRun]], 
+                                          FUN = function(dat)
+                                          {
+                                            msWaldHMP:::wrapperWMW(
+                                                x = dat[[1L]][seq_len(sampleSizes[ssRun]), ],
+                                                y = dat[[2L]][seq_len(sampleSizes[ssRun]), ],
+                                                adjMethod = "fdr")
+                                          })
+                                }# END - for: sampleSizes
+                              })# END - lapply: mcRun
+                        })# END - withProgress
+                    
+                    
+                    ## select only Differentially Abundant OTUs
+                    resArrWMW <- resArrWMW[h1OTUs, , , , drop = FALSE]
+                    ## power for each DA OTU, averaged across all DA OTUs
+                    singleOtuRej <- rowMeans(resArrWMW <= input$alpha, na.rm = TRUE, 
+                        dims = 3L)
+                    powAvgWMW <- colMeans(singleOtuRej)
+                    
+                    ## at least one rejection among DA OTUs
+                    tmpRej <- colSums(resArrWMW <= input$alpha, na.rm = TRUE, dims = 1L)
+                    powTotWMW <- rowMeans(tmpRej > 0, dims = 2L)
+                    
+                    if (nStrata > 1L)
+                    {
+#                      auxRej <- colSums(tmpRej, na.rm = FALSE, dims = 1L) > 0
+                      auxRej <- apply(resArrWMW, c(1L, 3L, 4L), p.adjust, method = "fdr")
+                      globRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 2L)
+                      powTotWMW <- rbind(powTotWMW, "Global" = rowMeans(globRej > 0))
+                      
+                      globAvgRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 1L)
+                      globAvgRej <- rowMeans(globAvgRej > 0, dims = 2L)
+                      powAvgWMW <- rbind(powAvgWMW, "Global" = colMeans(globAvgRej))
+                      
+                      powOut <- cbind(
+                          powTotWald["Global", ], 
+                          powTotWMW["Global", ], powAvgWMW["Global", ])
+                      colnames(powOut) <- c("Wald", "W.M.W.", "W.M.W. avg")
+                    } else
+                    {
+                      powOut <- cbind(
+                          powTotWald, drop(powTotWMW), drop(powAvgWMW))
+                    }# END - ifelse: more than one stratum
+                    
+                    colnames(powOut) <- c("Wald", "W.M.W.", "W.M.W. avg")
+                    
+                  } else        # *** only Wald test ***
+                  {
+                    if (nStrata > 1L)
+                    {
+                      powOut <- t(powTotWald["Global", , drop = FALSE])
+                    } else
+                    {
+                      powOut <- as.matrix(powTotWald)
+                    }# END - ifelse: more than one stratum
+                    
+                    colnames(powOut) <- "Wald"
+                  }# END - ifelse: only Wald or also WMW test?
+                  
+#                    save.image(file = "debugSessionWMW.RData")
+#                    load("debugSessionWMW.RData")
 #                  ## create *alphaDM* for the function
 #                  alphaDM <- lapply(seq_along(piOne()$"piOne"), 
 #                      FUN = function(i, one, two)
@@ -734,13 +855,7 @@ shinyServer(
             
 #            mcHmpWaldResults <- 
             list("seqSizes" = sampleSizes, 
-                "pow" = if(nStrata > 1L)
-                    {
-                      tail(rejTot, n = 1)
-                    } else
-                    {
-                      rejTot
-                    })
+                "pow" = powOut)
           })# END - reactive: mcHmpWaldResults
       
       
@@ -765,8 +880,8 @@ shinyServer(
             } else {}
             ### show selected point
 #            isolate({
-                  powPlotCoords$x <- input$"powPlotClick"$x
-                  powPlotCoords$y <- input$"powPlotClick"$y
+            powPlotCoords$x <- input$"powPlotClick"$x
+            powPlotCoords$y <- input$"powPlotClick"$y
 #                })
           })
       
@@ -776,81 +891,177 @@ shinyServer(
             input$powerSimStart
             input$"powPlotClick"
             
+#            seqSizes <- mcHmpWaldResults$"seqSizes"
+#            powerData <- mcHmpWaldResults$"pow"
+            seqSizes <- mcHmpWaldResults()$"seqSizes"
+            powerData <- mcHmpWaldResults()$"pow"
+            
             ### interpolate points with natural splines
-            ## interpolated data
-            lineData <- spline(
-                x = mcHmpWaldResults()$"seqSizes", 
-                y = mcHmpWaldResults()$"pow", method = "natural")
-            lineData$y[lineData$y > 1] <- 1
+            ## interpolated Wald data
+            waldLine <- spline(
+                x = seqSizes, 
+                y = powerData[, "Wald"], method = "natural")
+            waldLine$y[waldLine$y > 1] <- 1
+            
+            if (input$"wmwTest")
+            {
+              ## interpolated WMW data, total power: at least one DA detected
+              wmwLineTot <- spline(
+                  x = seqSizes, 
+                  y = powerData[, "W.M.W."], method = "natural")
+              wmwLineTot$y[wmwLineTot$y > 1] <- 1
+              ## interpolated WMW data, single OTU power average across DA OTUs
+              wmwLineAvg <- spline(
+                  x = seqSizes, 
+                  y = powerData[, "W.M.W. avg"], method = "natural")
+              wmwLineAvg$y[wmwLineAvg$y > 1] <- 1
+            } else {}
+            
 #            sampleVec <- seq(
 #                from = input$sampleSizes[1L], to = input$sampleSizes[2L],
 #                length = 100)
 #                findSpecificPowFun <- approxfun(
-#                    x = mcHmpWaldResults()$"seqSizes", 
-#                    y = mcHmpWaldResults()$"pow")
+#                    x = seqSizes, 
+#                    y = powerData)
             
             par(mar = c(4, 4, 1, 1))
             if(input$powerSimStart == 0)
             {
               plot(0, 0 , type = "n", xlim = input$sampleSizes, ylim = c(0, 1), 
                   xlab = "sample size", ylab = "power")
-              text(mean(input$sampleSizes), .5, labels = "NOT YET INITIATED", 
+              text(mean(input$sampleSizes), .5, labels = "NOT YET STARTED", 
                   cex = 2)
             } else {}
             
-            plot(mcHmpWaldResults()$"seqSizes", mcHmpWaldResults()$"pow", 
+            plot(seqSizes, powerData[, "Wald"], col = "black", bg = "red2",
                 xlim = input$sampleSizes + c(-2L, 2L), 
-                ylim = c(0, 1.1), pch = 19, lwd = 1,
+                ylim = c(0, 1.1), pch = 21, lwd = 2, 
                 type = "p", #main = "Power vs. Sample Size",
-                xlab = "sample size", ylab = "power")
-            lines(lineData, col = 1, lty = 1)
+                xlab = "sample size", ylab = "power", cex = 2)
+            lines(waldLine, col = "red2", lty = 1, lwd = 2)
+            
+            if (input$"wmwTest")
+            {
+              points(seqSizes, powerData[, "W.M.W."], 
+                  col = "black", bg = "blue2", pch = 22, cex = 2, lwd = 2)
+              lines(wmwLineTot, col = "blue2", lty = 1, lwd = 2)
+              points(seqSizes, powerData[, "W.M.W. avg"], 
+                  col = "black", bg = "blue2", pch = 23, cex = 2, lwd = 2)
+              lines(wmwLineAvg, col = "blue2", lty = 2, lwd = 2)
+              legend(x = "left", pch = 21:23, 
+                  pt.bg = c("red2", "blue2", "blue2"), col = "black", 
+                  lty = c(1, 1, 2), lwd = 2, pt.cex = 1.5, 
+                  legend = c("Wald", "WMW tot", "WMW avg"))
+            } else {}
+            
             
             abline(h = c(0, input$alpha, 1), lty = 4, col = "gray70", lwd = 2)
-            text(x =  min(input$sampleSizes), y = input$alpha, pos = 3, 
+            text(x = .8 * diff(input$sampleSizes), y = input$alpha, pos = 3, 
                 labels = paste0("alpha = ", input$alpha), cex = 1.3)
           })
       
-      ## saving plot on file in a temporary directory 
-      savePdfPlot <- reactive({
-            fileName <- paste0(tempdir(), .Platform[["file.sep"]], "copyPowPlot.pdf")
-            pdf(file = fileName)
-            powSimPlot()
-            dev.off()
-            fileName
-          })
+#      ## saving plot on file in a temporary directory 
+#      savePdfPlot <- reactive({
+#            fileName <- paste0(tempdir(), .Platform[["file.sep"]], "copyPowPlot.pdf")
+#            pdf(file = fileName)
+#            powSimPlot()
+#            dev.off()
+#            fileName
+#          })
       
       powPlotPoint <- reactive({
             input$"powPlotClick"
 #            dev.copy2pdf(file = "copyPowPlot.pdf")
             powSimPlot()
             
+            
+#            seqSizes <- mcHmpWaldResults$"seqSizes"
+#            powerData <- mcHmpWaldResults$"pow"
+            seqSizes <- mcHmpWaldResults()$"seqSizes"
+            powerData <- mcHmpWaldResults()$"pow"
+            
+            ## function creating horizontal or vertical line
+            lineCoords <- function(dat, direction = c("horizontal", "vertical"))
+            {
+              if (direction == "horizontal")
+              {
+                list("x" = c(0, dat["x"]), "y" = rep.int(dat["y"], 2L))
+              } else
+              {
+                list("x" = rep.int(dat["x"], 2L), "y" = c(0, dat["y"]))
+              }
+            }# END: function - lineCoords
+            
             ## function that interpolates data
-            findSpecificPowFun <- splinefun(
-                x = mcHmpWaldResults()$"seqSizes", 
-                y = mcHmpWaldResults()$"pow")
+            specificPowFunWald <- splinefun(
+                x = seqSizes, 
+                y = powerData[, 1L])
+            
+            if (input$"wmwTest")
+            {
+              specificPowFunWMW <- splinefun(
+                  x = seqSizes, 
+                  y = powerData[, 2L])
+            } else {}
+            
+            
             
             if (!is.null(powPlotCoords$x))
             {
-              resCoords <- c(
+              coordsPointWald <- c(
                   "x" = powPlotCoords$x, 
-                  "y" = min(1, findSpecificPowFun(powPlotCoords$x))
-              )
+                  "y" = min(1, specificPowFunWald(powPlotCoords$x)))
               
-              points(powPlotCoords, pch = 3, lwd = 3, cex = 2.5, col = "red2")
-              lines(x = c(resCoords["x"], resCoords["x"]), 
-                  y = c(0, resCoords["y"]), 
-                  lty = 4, col = "red2", lwd = 2)
-              lines(x = c(0, resCoords["x"]), 
-                  y = c(resCoords["y"], resCoords["y"]), 
-                  lty = 4, col = "red2", lwd = 2)
+              if (input$"wmwTest")
+              {
+                coordsPointWMW <- c(
+                    "x" = powPlotCoords$x, 
+                    "y" = min(1, specificPowFunWMW(powPlotCoords$x)))
+              } else {}
               
-              text(x = powPlotCoords$x, y = powPlotCoords$y, 
+              ## cross corresponding to click
+              points(powPlotCoords, pch = 3, lwd = 3, cex = 2.5, col = "black")
+              
+              ### Wald power line
+              points(as.list(coordsPointWald), pch = 3, lwd = 3, cex = 1.5, col = "red2")
+              ## horizontal line
+              lines(lineCoords(coordsPointWald, direction = "horizontal"), 
+                  lty = 4, col = "red2", lwd = 2)
+              ## vertical line
+#              lines(x = c(resCoordsWald["x"], resCoordsWald["x"]), 
+#                  y = c(0, resCoordsWald["y"]), 
+#                  lty = 4, col = "red2", lwd = 2)
+              lines(lineCoords(coordsPointWald, direction = "vertical"), 
+                  lty = 4, col = "red2", lwd = 2)
+              ## text showing coordinates values
+#              text(x = powPlotCoords$x, y = powPlotCoords$y, 
+              text(as.list(coordsPointWald), 
                   labels = paste0(
                       "Size=", round(powPlotCoords$x, 2L),
                       "\n Power=", 
-                      round(resCoords["y"], 3L)), 
+                      round(coordsPointWald["y"], 3L)), 
                   pos = 3, offset = 1, cex = 1.5)
-            } else {} 
+              
+              ### Wilcoxon-Mann-Whitney power line
+              if (input$"wmwTest")
+              {
+                points(as.list(coordsPointWMW), pch = 3, lwd = 3, cex = 1.5, col = "blue2")
+                ## horizontal line
+                lines(lineCoords(coordsPointWMW, direction = "horizontal"), 
+                    lty = 4, col = "blue2", lwd = 2)
+                ## vertical line
+                lines(lineCoords(coordsPointWMW, direction = "vertical"), 
+                    lty = 4, col = "blue2", lwd = 2)
+                ## text showing coordinates values
+#                text(x = powPlotCoords$x, y = powPlotCoords$y, 
+                text(as.list(coordsPointWMW), 
+                    labels = paste0(
+                        "Size=", round(powPlotCoords$x, 2L),
+                        "\n Power=", 
+                        round(coordsPointWMW["y"], 3L)), 
+                    pos = 3, offset = 1, cex = 1.5)
+              }# END: if - WMW test
+            } else {}# END: if - clicked
           })
       
       output$resPowSimPlot <- renderPlot({
@@ -866,32 +1077,37 @@ shinyServer(
       
       
       ### download PDF report
-      inputPars <- reactive({
-            tmp <- c(
-                "Enterotypes Stratification"     = input$strata, 
-                "MonteCarlo Replications"           = input$MC, 
-                "Pi One type"    = input$kindPiOne, 
-                "Number of OTUs"      = input$numOTUs, 
-                "Most/Least Abundant 1" = input$mostLeastAb1, 
-                "Most/Least Abundant 2" = input$mostLeastAb2, 
-                "Changed OTUs 1"    = input$diffOTUs1, 
-                "Changed OTUs 2"    = input$diffOTUs2, 
-                "Rel. Abund. Diff. 1"    = paste(input$relAbund1, "%"), 
-                "Rel. Abund. Diff. 2"    = paste(input$relAbund2, "%"), 
-                "Theta"        = input$theta, 
-                "Total Reads"    = input$totCounts, 
-                "Significance Level"       = input$alpha,
-                "Sample 1 Size"           = input$n1, 
-                "Sample 2 Size"           = input$n2, 
-                "Min Sample Size"      = input$sampleSizes[1L], 
-                "Max Sample Size"      = input$sampleSizes[2L], 
-                " " = " ")
-            aux <- matrix(" ", ncol = 4, nrow = length(tmp)/2)
-            aux[, 1L] <- names(tmp)[seq_len(length(tmp)/2)]
-            aux[, 2L] <- tmp[seq_len(length(tmp)/2)]
-            aux[, 3L] <- names(tmp)[-seq_len(length(tmp)/2)]
-            aux[, 4L] <- tmp[-seq_len(length(tmp)/2)]
-            aux
+#      inputPars <- reactive({
+#            tmp <- c(
+#                "Enterotypes Stratification"     = input$strata, 
+#                "MonteCarlo Replications"           = input$MC, 
+#                "Pi One type"    = input$kindPiOne, 
+#                "Number of OTUs"      = input$numOTUs, 
+#                "Most/Least Abundant 1" = input$mostLeastAb1, 
+#                "Most/Least Abundant 2" = input$mostLeastAb2, 
+#                "Changed OTUs 1"    = input$diffOTUs1, 
+#                "Changed OTUs 2"    = input$diffOTUs2, 
+#                "Rel. Abund. Diff. 1"    = paste(input$relAbund1, "%"), 
+#                "Rel. Abund. Diff. 2"    = paste(input$relAbund2, "%"), 
+#                "Theta"        = input$theta, 
+#                "Total Reads"    = input$totCounts, 
+#                "Significance Level"       = input$alpha,
+#                "Sample 1 Size"           = input$n1, 
+#                "Sample 2 Size"           = input$n2, 
+#                "Min Sample Size"      = input$sampleSizes[1L], 
+#                "Max Sample Size"      = input$sampleSizes[2L], 
+#                " " = " ")
+#            aux <- matrix(" ", ncol = 4, nrow = length(tmp)/2)
+#            aux[, 1L] <- names(tmp)[seq_len(length(tmp)/2)]
+#            aux[, 2L] <- tmp[seq_len(length(tmp)/2)]
+#            aux[, 3L] <- names(tmp)[-seq_len(length(tmp)/2)]
+#            aux[, 4L] <- tmp[-seq_len(length(tmp)/2)]
+#            aux
+#          })
+      
+      
+      outputPars <- reactive({
+            
           })
       
       output$downloadReport <- downloadHandler(
@@ -903,7 +1119,7 @@ shinyServer(
           },
           
           content = function(file) {
-            src <- normalizePath('template.Rmd')
+            src <- normalizePath('./template.Rmd')
             
             # temporarily switch to the temp dir, in case you do not have write
             # permission to the current working directory
@@ -913,6 +1129,7 @@ shinyServer(
             
 #            require(rmarkdown)
             out <- render('template.Rmd', pdf_document(highlight = "haddock"))
+#             out <- render('template.Rmd', NULL)
             file.rename(out, file)
           }
       )
@@ -920,36 +1137,5 @@ shinyServer(
     })# END - shinyServer
 
 
-
-
-#piOne <- piOneGen(kind = "geom")
-#rho <- rhoGenSpecOtus(
-#    K = 100, 
-#    m1 = 3, m2 = 2, 
-#    relAbund1 = 1.33, 
-#    relAbund2 = 1.25, 
-#    otus2Change = 1:5)
-#piTwo <- piTwoGen(piOne, rho, compensation = "relDiff")$piTwo
-#
-#
-#MC <- 1000
-#Nrs <- list(rep.int(1e4, 30), rep.int(1e4, 30)) 
-#piMat0 <- cbind(piOne, piOne)
-#piMat1 <- cbind(piOne, piTwo)
-#theta <- c(.02, .02) 
-#alpha <- .1
-#
-#library(msWaldHMP)
-#### under H0
-#myFunMC(MC = MC, nReads = Nrs, alphaMat = piMat0, 
-#    thetaVec = theta, sigLev = alpha)
-#### under H1
-#myFunMC(MC = MC, nReads = Nrs, alphaMat = piMat1, 
-#    thetaVec = theta, sigLev = alpha)
-#
-#### under H0
-#MC.Xmcupo.statistics(Nrs, MC, piOne, t(piMat0), theta, "ha", alpha)
-#### under H1
-#MC.Xmcupo.statistics(Nrs, MC, piOne, t(piMat1), theta, "ha", alpha)
 
 
