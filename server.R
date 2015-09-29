@@ -1,4 +1,4 @@
-################## in##############################################################
+################################################################################
 ### Title: server.R                                              ###
 ###                                                                          ###
 ### Project: MicrobiomeTry                                                ###
@@ -26,22 +26,22 @@
 #metaData <- read.table("v13_map_uniquebyPSN.txt", HMPbodysubsite)
 
 #rm(list = ls()); gc(reset = TRUE)
+
+
 #setwd("./shinyMB/")
-
-
 source("./www/auxCode.R")
 
 
 #### manual input for testing purposes
 ### H_0 to test FDR
-#input <- list(strata = "NO", MC = 50, "wmwTest" = TRUE,
+#input <- list(strata = "YES", MC = 50, "wmwTest" = TRUE,
 #    kindPiOne = "Stool", numOTUs = 30, simulatedPiOne = FALSE,
 #    mostLeastAb1 = "most abundant", mostLeastAb2 = "most abundant", 
 #    diffOTUs1 = 2, diffOTUs2 = 3,
 #    relAbund1 = 0, relAbund2 = 0, 
 #    n1 = 30, n2 = 30, theta = 0.01, totCounts = 1e4, 
 #    seed = 12345, alpha = .1,
-#    sampleSizes = c(20, 90), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
+#    sampleSizes = c(20, 60), userFiles = list(datapath = "./shinyMB/data/entTot.csv"))
 #
 ### effect size at minimum
 #input <- list(strata = "YES", MC = 100, "wmwTest" = TRUE,
@@ -350,6 +350,7 @@ shinyServer(
       ### generation of all MC counts datasets
       totCountsGen <- reactive({
             set.seed(12345)
+            invisible(a <- rnorm(1e3))
 #            input$n1
 #            input$n2
 #            input$sampleSizes
@@ -376,12 +377,12 @@ shinyServer(
 #                  names(tmpLibSize) <- type
 #                } else
 #                {
-                  #              if (is.null(piOne()$"nReadsFromData"))
-                  #              {
-                  #              } else
-                  #              {
-                  #                tmpLibSize <- piOne()$"nReadsFromData"
-                  #              }# END - ifelse: library sizes taken from user-uploaded data
+#              if (is.null(piOne()$"nReadsFromData"))
+#              {
+#              } else
+#              {
+#                tmpLibSize <- piOne()$"nReadsFromData"
+#              }# END - ifelse: library sizes taken from user-uploaded data
                   if (piOne()$"simulatedPiOne")
                   {
                     type <- "Stool"
@@ -450,10 +451,13 @@ shinyServer(
             
             isolate({
                   dataList <- totCountsGen()
-                  wmwTest <- input$"wmwTest"
 #                 dataList <- totCountsGen
+                  wmwTest <- input$"wmwTest"
                   set.seed(12345)
+                  invisible(a <- rnorm(1e3))
                   nSubsets <- 1L
+                  n1 <- input$n1
+                  n2 <- input$n2
                   mcReps <- length(dataList) - 1L
                   nStrata <- length(dataList[[1L]])
                   nGroups <- length(dataList[[c(1L, 1L)]])
@@ -464,7 +468,11 @@ shinyServer(
                   if (length(h1OTUs) == 0L)
                   {
                     h1OTUs <- seq_len(input$numOTUs)
-                  } else {}
+                    minNumRej <- input$alpha * nOtus
+                  } else
+                  {
+                    minNumRej <- 0L
+                  }
 #                  nReads <- list(
 #                      rep.int(input$totCounts, input$n1), 
 #                      rep.int(input$totCounts, input$n2))
@@ -490,8 +498,8 @@ shinyServer(
 #                  tmpReads <- totCountsGen$"nReads"
                   tmpReads <- dataList$"nReads"
                   nReads <- list(
-                      tmpReads[[1L]][seq_len(input$n1)], 
-                      tmpReads[[2L]][seq_len(input$n2)])
+                      tmpReads[[1L]][seq_len(n1)], 
+                      tmpReads[[2L]][seq_len(n2)])
                   
 #                  tmpWald <- rep.int(NA, nStrata)
 #                  names(tmpWald) <- names(dataList[[1L]])
@@ -510,8 +518,8 @@ shinyServer(
                               for (strRun in seq_len(nStrata))
                               {
                                 aux <- list(
-                                    dataList[[c(mcRun, strRun, 1L)]][seq_len(input$n1), ], 
-                                    dataList[[c(mcRun, strRun, 2L)]][seq_len(input$n2), ])
+                                    dataList[[c(mcRun, strRun, 1L)]][seq_len(n1), ], 
+                                    dataList[[c(mcRun, strRun, 2L)]][seq_len(n2), ])
                                 thAux <- sapply(aux, msWaldHMP:::weirMoM4Wald)
                                 piAux <- sapply(aux, msWaldHMP:::piMoM4Wald)
                                 tmpWald[strRun] <- 
@@ -524,10 +532,15 @@ shinyServer(
                   resTot <- as.matrix(resTot)
                   
                   
-                  ## in case Wilcoxon-Mann-Whitney is desired
+                  ### in case Wilcoxon-Mann-Whitney is desired, 
+                  ### if more than one stratum, use normal approximation
                   if (wmwTest)
                   {
-                    resWMW <- array(NA, dim = c(nOtus, nStrata, mcReps))
+                    pValsWMW <- array(NA, dim = c(nOtus, nStrata, mcReps))
+                    if (nStrata > 1L)
+                    {
+                      statWMW <- array(NA, dim = c(nOtus, nStrata, mcReps))
+                    } else {}
                     
                     withProgress(message = "Computing WMW...", 
                         value = 0, min = 0, max = 1,
@@ -540,10 +553,16 @@ shinyServer(
                                 incProgress(round(1/mcReps, 2L))
                                 for (strRun in seq_len(nStrata))
                                 {
-                                  resWMW[, strRun, mcRun] <<- msWaldHMP:::wrapperWMW(
-                                      x = dataList[[c(mcRun, strRun, 1L)]][seq_len(input$n1), ],
-                                      y = dataList[[c(mcRun, strRun, 2L)]][seq_len(input$n2), ],
+                                  tmp <- msWaldHMP:::wrapperWMW(
+                                      x = dataList[[c(mcRun, strRun, 1L)]][seq_len(n1), ],
+                                      y = dataList[[c(mcRun, strRun, 2L)]][seq_len(n2), ],
                                       adjMethod = "fdr")
+                                  pValsWMW[, strRun, mcRun] <<- tmp$p.value
+                                  ## if more than one strata, obtain test-statistic
+                                  if (nStrata > 1L)
+                                  {
+                                    statWMW[, strRun, mcRun] <<- tmp$statistic
+                                  } else {}
                                 }# END - for: strata
                               })# END - lapply: auxWMW
                         })# END - withProgress
@@ -572,13 +591,13 @@ shinyServer(
               pValGlob <- pchisq(q = colSums(resTot), df = globDoF, 
                   lower.tail = FALSE)
               powTotWald <- c(
-                  colMeans(pValTot <= input$alpha), 
-                  "Global" = mean(pValGlob <= input$alpha))
+                  colMeans(pValTot < input$alpha), 
+                  "Global" = mean(pValGlob < input$alpha))
               powTotWald <- as.matrix(powTotWald)
               colnames(powTotWald) <- "Power"
             } else
             {
-              powTotWald <- colMeans(pValTot <= input$alpha)
+              powTotWald <- colMeans(pValTot < input$alpha)
             }
             
             if (length(powTotWald) == 1L)
@@ -591,28 +610,45 @@ shinyServer(
             if (wmwTest)
             {
               ## select only Differentially Abundant OTUs
-              resWMW <- resWMW[h1OTUs, , , drop = FALSE]
+              pValsWMW <- pValsWMW[h1OTUs, , , drop = FALSE]
               ## power for each DA OTU, averaged across all DA OTUs
-              singleOtuRej <- rowMeans(resWMW <= input$alpha, na.rm = TRUE, 
+              singleOtuRej <- rowMeans(pValsWMW < input$alpha, na.rm = TRUE, 
                   dims = 2L)
               powAvgWMW <- colMeans(singleOtuRej)
-              ## at least one rejection among DA OTUs
-              tmpRej <- colSums(resWMW <= input$alpha, na.rm = TRUE, dims = 1L)
-              powTotWMW <- rowMeans(tmpRej > 0)
+              ## at least one rejection among DA OTUs, unless all are under H0
+              tmpRej <- colSums(pValsWMW < input$alpha, na.rm = TRUE, dims = 1L)
+              powTotWMW <- rowMeans(tmpRej > minNumRej)
               
-#              tmpOtuWMW <- apply(resWMW <= input$alpha, MARGIN = c(1L, 3), sum, 
+#              tmpOtuWMW <- apply(resWMW < input$alpha, MARGIN = c(1L, 3), sum, 
 #                  na.rm = TRUE)
 #              rejOtuWMW <- rowMeans(tmpOtuWMW > 0)
               
               if (nStrata > 1L)
               {
-#               auxRej <- colSums(tmpRej, na.rm = FALSE, dims = 1L) > 0
-                auxRej <- apply(resWMW, c(1L, 3L), p.adjust, method = "fdr")
-                globRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 2L)
-                powTotWMW <- c(powTotWMW, mean(globRej > 0))
-                globAvgRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 1L)
-                globAvgRej <- mean(rowMeans(globAvgRej > 0))
-                powAvgWMW <- c(powAvgWMW, globAvgRej)
+#                auxRej <- apply(pValsWMW, c(1L, 3L), p.adjust, method = "fdr")
+#                globRej <- colSums(auxRej < input$alpha, na.rm = TRUE, dims = 2L)
+#                powTotWMW <- c(powTotWMW, mean(globRej > 0))
+#                globAvgRej <- colSums(auxRej < input$alpha, na.rm = TRUE, dims = 1L)
+#                globAvgRej <- mean(rowMeans(globAvgRej > 0))
+#                powAvgWMW <- c(powAvgWMW, globAvgRej)
+                
+                ## select only Differentially Abundant OTUs
+                statWMW <- statWMW[h1OTUs, , , drop = FALSE]
+                ## normalise WMW test-statistics
+                ## (U - n1 n2/2) sqrt(n1 n2 (n1 + n2 + 1)/12
+                muU <-  n1 * n2/ 2
+                sig2U <- n1 * n2 * (n1 + n2 + 1)/12
+                statWMW <- (statWMW - muU)^2 / sig2U
+                ## sum together statistics for each stratum and compute p.values
+                auxStatWMW <- apply(statWMW, c(1L, 3L), sum)
+                auxPValWMW <- pchisq(q = auxStatWMW, df = nStrata, lower.tail = FALSE)
+                
+                ## power to reject *at least one* DA
+                globRej <- colSums(auxPValWMW < input$alpha, na.rm = TRUE, dims = 1L)
+                powTotWMW <- c(powTotWMW, mean(globRej > minNumRej))
+                ## average of individual DAs rejection rate
+                globAvgRej <- rowMeans(auxPValWMW < input$alpha, na.rm = TRUE)
+                powAvgWMW <- c(powAvgWMW, mean(globAvgRej))
               } else {}
               
               totOut <- cbind(round(powTotWald, 3L), round(powTotWMW, 3L), 
@@ -645,13 +681,9 @@ shinyServer(
             isolate({
                   dataList <- totCountsGen()
 #                  dataList <- totCountsGen
-#                  h1OTUs <- changedOTUs()
-                  h1OTUs <- which(el(piTwo()$otuType) %in% 1L:2)
-                  if (length(h1OTUs) == 0L)
-                  {
-                    h1OTUs <- seq_len(input$numOTUs)
-                  } else {}
                   nSubsets <- 7L
+                  n1 <- input$n1
+                  n2 <- input$n2
                   mcReps <- length(dataList) - 1L
                   nStrata <- length(dataList[[1L]])
                   nGroups <- length(dataList[[c(1L, 1L)]])
@@ -660,48 +692,34 @@ shinyServer(
                       seq(from = input$sampleSizes[1L], to = input$sampleSizes[2L], 
                           length = nSubsets))
                   
-## check if random library size or not
-#                  if (piOne()$"simulatedPiOne")
-#                  {
-#                    nReads <- lapply(seq_along(sampleSizes), FUN = function(i)
-#                        {
-#                          list(
-#                              round(
-#                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
-#                                  digits = 0L), 
-#                              round(
-#                                  rgamma(sampleSizes[i], shape = 3.5, rate = 7e-4), 
-#                                  digits = 0L))
-#                        })
-#                  } else
-#                  {
+                  ### focus on the OTUs that are truly Differentially Abundant,
+                  ### unless there is no true DA OTU, in that case rejecting
+                  ### at most FDR = alpha * nOtus is accetable because all discoveries
+                  ### are false discoveries and alpha percent is still acceptable
+#                  h1OTUs <- which(el(piTwo$otuType) %in% 1L:2)
+                  h1OTUs <- which(el(piTwo()$otuType) %in% 1L:2)
+                  if (length(h1OTUs) == 0L)
+                  {
+                    h1OTUs <- seq_len(nOtus)
+                    minNumRej <- input$alpha * nOtus
+                  } else
+                  {
+                    minNumRej <- 0L
+                  }
+                  
                   tmpReads <- dataList$"nReads"
                   nReads <- lapply(seq_along(sampleSizes), 
                       FUN = function(i)
                       {
-#                          list(
-#                              sample(generatedCounts()$"libSizesOrig", 
-#                                  size = sampleSizes[i], 
-#                                  replace = TRUE), 
-#                              sample(generatedCounts()$"libSizesOrig", 
-#                                  size = sampleSizes[i], 
-#                                  replace = TRUE))
                         list(
                             tmpReads[[1L]][seq_len(sampleSizes[i])], 
                             tmpReads[[2L]][seq_len(sampleSizes[i])]) 
                       })
                   names(nReads) <- sampleSizes
-#                  }#END - ifelse: simulatedPiOne, libSizes
-                  
-#                  tmpWald <- matrix(NA, nrow = nSubsets, ncol = nStrata)
-#                  rownames(tmpWald) <- sampleSizes
-#                  colnames(tmpWald) <- names(dataList[[1L]])
                   
                   resArr <- array(NA, dim = c(nSubsets, nStrata, mcReps), 
                       dimnames = list(sampleSizes, names(dataList[[1L]]), 
                           paste0("MC", seq_len(mcReps))))
-#                  for (mcRun in seq_along(resTot))
-#                    resArr[, , mcRun] <- resTot[[mcRun]]
                   
                   withProgress(message = "Computing...", 
                       value = 0, min = 0, max = 1,
@@ -726,7 +744,6 @@ shinyServer(
                                       msWaldHMP:::msWaldStat(nReads[[ssRun]], piAux, thAux)
                                     })
                               }# END - for: sampleSizes
-#                              tmpWald
                             })# END - lapply: mcRun
                       })# END - withProgress
                   
@@ -745,24 +762,28 @@ shinyServer(
                     pValGlob <- pchisq(q = apply(resArr, c(1, 3), sum), df = globDoF, 
                         lower.tail = FALSE)
                     powTotWald <- rbind(
-                        colMeans(pValTot <= input$alpha),
-                        "Global" = rowMeans(pValGlob <= input$alpha))
+                        colMeans(pValTot < input$alpha),
+                        "Global" = rowMeans(pValGlob < input$alpha))
                   } else
                   {
-                    powTotWald <- rowMeans(drop(pValTot) <= input$alpha)
+                    powTotWald <- rowMeans(drop(pValTot) < input$alpha)
                   }# END - ifelse: nStrata
                   
                   
                   ## in case Wilcoxon-Mann-Whitney is desired
                   if (input$"wmwTest")
                   {
-                    resArrWMW <- array(NA, 
+                    pValArrWMW <- array(NA, 
                         dim = c(nOtus, nStrata, nSubsets, mcReps), 
                         dimnames = list(
                             colnames(dataList[[c(1L, 1L, 1L)]]), 
                             names(dataList[[1L]]), 
                             sampleSizes, 
                             paste0("MC", seq_len(mcReps))))
+                    if (nStrata > 1L)
+                    {
+                      statArrWMW <- pValArrWMW
+                    } else {}
                     
                     withProgress(message = "Computing power WMW...", 
                         value = 0, min = 0, max = 1,
@@ -776,46 +797,81 @@ shinyServer(
                                 incProgress(round(1/mcReps, 2L))
                                 for (ssRun in seq_along(sampleSizes))
                                 {
-                                  resArrWMW[, , ssRun, mcRun] <<- 
-                                      sapply(dataList[[mcRun]], 
-                                          FUN = function(dat)
-                                          {
-                                            msWaldHMP:::wrapperWMW(
-                                                x = dat[[1L]][seq_len(sampleSizes[ssRun]), ],
-                                                y = dat[[2L]][seq_len(sampleSizes[ssRun]), ],
-                                                adjMethod = "fdr")
-                                          })
+                                  tmp <- lapply(dataList[[mcRun]], 
+                                      FUN = function(dat)
+                                      {
+                                        msWaldHMP:::wrapperWMW(
+                                            x = dat[[1L]][seq_len(sampleSizes[ssRun]), ],
+                                            y = dat[[2L]][seq_len(sampleSizes[ssRun]), ],
+                                            adjMethod = "fdr")
+                                      })
+                                  pValArrWMW[, , ssRun, mcRun] <<- 
+                                      sapply(tmp, elNamed, name = "p.value")
+                                  if (nStrata > 1L)
+                                  {
+                                    statArrWMW[, , ssRun, mcRun] <<- 
+                                        sapply(tmp, elNamed, name = "statistic")
+                                  } else {}#END - if stratified
                                 }# END - for: sampleSizes
                               })# END - lapply: mcRun
                         })# END - withProgress
                     
                     
                     ## select only Differentially Abundant OTUs
-                    resArrWMW <- resArrWMW[h1OTUs, , , , drop = FALSE]
+                    pValArrWMW <- pValArrWMW[h1OTUs, , , , drop = FALSE]
                     ## power for each DA OTU, averaged across all DA OTUs
-                    singleOtuRej <- rowMeans(resArrWMW <= input$alpha, na.rm = TRUE, 
+                    singleOtuRej <- rowMeans(pValArrWMW < input$alpha, na.rm = TRUE, 
                         dims = 3L)
                     powAvgWMW <- colMeans(singleOtuRej)
                     
                     ## at least one rejection among DA OTUs
-                    tmpRej <- colSums(resArrWMW <= input$alpha, na.rm = TRUE, dims = 1L)
-                    powTotWMW <- rowMeans(tmpRej > 0, dims = 2L)
+                    tmpRej <- colSums(pValArrWMW < input$alpha, na.rm = TRUE, dims = 1L)
+                    powTotWMW <- rowMeans(tmpRej > minNumRej, dims = 2L)
                     
                     if (nStrata > 1L)
                     {
-#                      auxRej <- colSums(tmpRej, na.rm = FALSE, dims = 1L) > 0
-                      auxRej <- apply(resArrWMW, c(1L, 3L, 4L), p.adjust, method = "fdr")
-                      globRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 2L)
-                      powTotWMW <- rbind(powTotWMW, "Global" = rowMeans(globRej > 0))
+#                      auxRej <- apply(pValArrWMW, c(1L, 3L, 4L), p.adjust, method = "fdr")
+#                      globRej <- colSums(auxRej < input$alpha, na.rm = TRUE, dims = 2L)
+#                      powTotWMW <- rbind(powTotWMW, "Global" = rowMeans(globRej > 0))
+#                      
+#                      globAvgRej <- colSums(auxRej < input$alpha, na.rm = TRUE, dims = 1L)
+#                      globAvgRej <- rowMeans(globAvgRej > 0, dims = 2L)
+#                      powAvgWMW <- rbind(powAvgWMW, "Global" = colMeans(globAvgRej))
+#                      
+#                      powOut <- cbind(
+#                          powTotWald["Global", ], 
+#                          powTotWMW["Global", ], powAvgWMW["Global", ])
+#                      colnames(powOut) <- c("Wald", "W.M.W.", "W.M.W. avg")
                       
-                      globAvgRej <- colSums(auxRej <= input$alpha, na.rm = TRUE, dims = 1L)
-                      globAvgRej <- rowMeans(globAvgRej > 0, dims = 2L)
+                      ## select only Differentially Abundant OTUs
+                      statArrWMW <- statArrWMW[h1OTUs, , , , drop = FALSE]
+                      
+                      ## normalise WMW test-statistics, exploit array indices permutation
+                      ## (U - n1 n2/2) sqrt(n1 n2 (n1 + n2 + 1)/12
+                      muU <-  sampleSizes^2 / 2
+                      sig2U <- sampleSizes^2 * (2 * sampleSizes + 1)/12
+                      tmp <- aperm(statArrWMW, c(3, 1, 2, 4))
+                      stdStatArrWMW <- (tmp - muU)^2 / sig2U
+                      stdStatArrWMW <- aperm(stdStatArrWMW, c(2, 3, 1, 4))
+                      
+                      ## sum together statistics for each stratum and compute p.values
+                      auxStatArrWMW <- apply(stdStatArrWMW, c(1L, 3L, 4L), sum, 
+                          na.rm = TRUE)
+                      auxPValArrWMW <- pchisq(q = auxStatArrWMW, df = nStrata, 
+                          lower.tail = FALSE)
+                      
+                      ## power to reject *at least one* DA
+                      globRej <- colSums(auxPValArrWMW < input$alpha, na.rm = TRUE, 
+                          dims = 1L)
+                      powTotWMW <- rbind(powTotWMW, "Global" = rowMeans(globRej > minNumRej))
+                      ## average of individual DAs rejection rate
+                      globAvgRej <- rowMeans(auxPValArrWMW < input$alpha, na.rm = TRUE, 
+                          dims = 2L)
                       powAvgWMW <- rbind(powAvgWMW, "Global" = colMeans(globAvgRej))
                       
                       powOut <- cbind(
                           powTotWald["Global", ], 
                           powTotWMW["Global", ], powAvgWMW["Global", ])
-                      colnames(powOut) <- c("Wald", "W.M.W.", "W.M.W. avg")
                     } else
                     {
                       powOut <- cbind(

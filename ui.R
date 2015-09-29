@@ -268,10 +268,10 @@ shinyUI(fluidPage(theme = shinytheme("spacelab"),
                     tabPanel(title = "How to use it",
                         fluidRow(
                             column(8, align = "center", 
-                                h2("Instructions", align = "center")),
+                                h2("Side-by-Side Instructions", align = "center")),
                             column(10, align = "left", 
                                 h3(paste0("Select the shape of the ",
-                                        "Ranked Abundance Distribution"))
+                                        "Rank Abundance Distribution"))
 #                                tags$hr()
                             ),
                             column(3, align = "left", #offset = 1,
