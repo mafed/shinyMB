@@ -1,16 +1,20 @@
 
 ---
-title: 'Sample Size Determination for Case-Control Microbiome Studies with Shiny'
-author: 'Federico Mattiello'
-output: pdf_document
+title: "Sample Size Determination for Case-Control Microbiome Studies with Shiny"
+author: "Federico Mattiello"
 date: '`r format(Sys.time(), "%d/%m/%Y - %X")`'
-toc: false
-highlight: zenburn
+output:
+  html_document:
+highlight: haddock
+toc: no
 ---
 
+This is the R Markdown report containing inputs and outputs coming from the Shiny 
+application for determining power and sample sizes of case-control microbiome studies. 
+Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. 
+For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-
-This report is automatically generated with the _R_ language.  
+*****
 
 
 ##INPUTS
@@ -54,9 +58,9 @@ theta
 
 ###Settings graphs  
 
-The following graphs show desired ranked abundance proportions with their respective 
-estimates based on the two simulated samples of size 
-`r input$relAbund1` and `r input$relAbund2`, respectively. 
+The following graphs show desired relative abundance distributions with their respective 
+estimates based on the two simulated samples of size `r input$n1` and `r input$n2`, 
+respectively. 
 
 ```{r piPlotsSave, echo=FALSE, fig.height=4}
 # counts <- isolate(generatedCounts()$piDirList)
@@ -68,8 +72,8 @@ for (strRun in seq_along(one))
 {
 drawPiPlot(
   countsData = counts[[strRun]], 
-  piOneObj = one[[strRun]],
-  piTwoObj = two[[strRun]], 
+  piOneObj = one[[strRun]][seq_len(input$numOTUs)],
+  piTwoObj = two[[strRun]][seq_len(input$numOTUs)], 
   main = names(one)[strRun], 
   ylab = 'Abundance Proportions', 
   theta = round(theta[[strRun]], 3L))
@@ -80,13 +84,14 @@ drawPiPlot(
 ###Library Size Distribution
 ```{r libSizesPlot, echo=FALSE}
 libSizeData <- isolate(totCountsGen()$nReads)
-sample1 <- density(libSizeData[[1L]])
-sample2 <- density(libSizeData[[2L]])
+extremeLibSize <- sapply(libSizeData, quantile, probs = 0.975)
+sample1 <- density(libSizeData[[1L]], from = 0, to = extremeLibSize[1L])
+sample2 <- density(libSizeData[[2L]], from = 0)
 plot(sample1, ylim = range(sample1$y, sample2$y), lwd = 2, 
      main = 'Library Size Distribution')
 lines(sample2, lwd = 2, col = 'red')
-# rug(sample1$x, lwd = 0.1)
-# rug(sample2$x, col = 'red', lwd = 0.1)
+rug(sample1$x, lwd = 0.1)
+rug(sample2$x, col = 'red', lwd = 0.1)
 legend(x = 'topright', col = c('black', 'red'), lwd = 2, 
        legend = c('Controls', 'Cases'))
 ```  
@@ -107,7 +112,7 @@ eval(parse(text = code))
 
 Power results for the current settings:
 ```{r powSimMC, echo=FALSE}
-auxSingleWald()
+auxSingleWald()$"table2Display"
 ```
 
 
@@ -133,18 +138,18 @@ if (input$'wmwTest')
   ## interpolated WMW data, total power: at least one DA detected
   wmwLineTot <- spline(
       x = seqSizes, 
-      y = powerData[, "W.M.W."], method = "natural")
+      y = powerData[, "WMW"], method = "natural")
   wmwLineTot$y[wmwLineTot$y > 1] <- 1
   ## interpolated WMW data, single OTU power average across DA OTUs
   wmwLineAvg <- spline(
       x = seqSizes, 
-      y = powerData[, "W.M.W. avg"], method = "natural")
+      y = powerData[, "WMW avg"], method = "natural")
   wmwLineAvg$y[wmwLineAvg$y > 1] <- 1
 } else {}
 
 
 par(mar = c(4, 4, 1, 1))
-if(input$powerSimStart == 0)
+if(input$powerSimStart == 0 && is.null(powerData))
   {
   plot(0, 0 , type = 'n', xlim = input$sampleSizes, ylim = c(0, 1), 
        xlab = 'sample size', ylab = 'power')
@@ -161,16 +166,16 @@ lines(waldLine, col = "red2", lty = 1, lwd = 2)
 
 if (input$"wmwTest")
 {
-  points(seqSizes, powerData[, "W.M.W."], 
+  points(seqSizes, powerData[, "WMW"], 
       col = "black", bg = "blue2", pch = 22, cex = 2, lwd = 2)
   lines(wmwLineTot, col = "blue2", lty = 1, lwd = 2)
-  points(seqSizes, powerData[, "W.M.W. avg"], 
+  points(seqSizes, powerData[, "WMW avg"], 
       col = "black", bg = "blue2", pch = 23, cex = 2, lwd = 2)
   lines(wmwLineAvg, col = "blue2", lty = 2, lwd = 2)
   legend(x = "left", pch = 21:23, 
       pt.bg = c("red2", "blue2", "blue2"), col = "black", 
       lty = c(1, 1, 2), lwd = 2, pt.cex = 1.5,
-      legend = c("Wald", "WMW tot", "WMW avg"))
+      legend = c("Wald", "WMW", "WMW avg"))
 } else {}
 
 
@@ -273,7 +278,57 @@ if (input$'wmwTest')
 ```
 
 
----------------------------------------------------------------------------  
+
+### Power of individual OTUs
+The following table appears only in case WMW test was selected.
+Column __Type__ indicates the type of the OTU: 
+
+- type2DA: second type of Differentially Abundant OTUs, the ones with the bigger 
+  default effect size (percentage increase);
+- type1DA: first type of Differentially Abundant OTUs, the ones with the smaller 
+  default effect size.
+
+
+\small
+```{r chunkForOtuPowTable, echo=FALSE, results='asis'}
+# tmp <- auxSingleWald$"otuPowTable"
+tmp <- auxSingleWald()$"otuPowTable"
+# otuType <- el(piTwo$"otuType")
+otuType <- el(piTwo()$"otuType")
+otuType <- otuType[otuType != 0]
+
+if (length(unique(otuType)) == 2L)
+{
+  auxOtuType <- c("0", "type1DA", "type2DA")[otuType]
+} else
+{
+#   auxOtuType <- factor(otuType, labels = c("compens", "type1DA", "type2DA"))
+  auxOtuType <- c("compens", "0", "type1DA", "type2DA")[otuType]
+}# END - ifelse: all unrequested OTUs are used for compensation
+
+if (NCOL(tmp) > 1L)
+{
+  if (NCOL(tmp) > 2L) {
+    auxNames <- rep(names(piOne()$"piOne"), each = 2L)
+    auxLabels <- rep.int(c("ID", "Power"), length(piOne()$"piOne"))
+    dimnames(tmp)[[2L]] <- paste(auxNames, auxLabels, sep = ".")
+    count <- 1L
+    for (stRun in 1L:(ncol(tmp)/2))
+    {
+      aux <- cbind(tmp[, count:(count + 1L)], "Type" = auxOtuType)
+      print(kable(aux))
+      count <- count + 2L
+    }
+  } else
+  {
+    tmp <- cbind(tmp, "Type" = auxOtuType)
+    print(kable(tmp))
+  }
+} else {}# END - if: _wmwTest_ individual OTU powers
+```
+
+
+*****
 \newpage
 
 ##R Session Information  

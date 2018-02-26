@@ -19,7 +19,7 @@
 ###
 
 #rm(list = ls()); gc(reset = TRUE)
-#setwd("C:/Users/Federico/Documents/SharedDocs/Dropbox/Microbiome/Architect/shinyMB-0.2")
+#setwd("C:/Users/Federico/Documents/SharedDocs/Dropbox/Microbiome/Architect/shinyMB")
 #setwd("path/to/local/shinyApp/directory")
 source("./www/auxCode.R")
 
@@ -65,6 +65,13 @@ aux <- lapply(piOne$"piVec", FUN = piTwoGen, rho = rho)
 piTwo <- list(
     "piTwo" = lapply(aux, elNamed, name = "piTwo"),
     "otuType" = lapply(aux, elNamed, name = "otuType"))
+load("./data/librarySizes.RData")
+tmpLibSize <- libSizesOrigRaref[["Stool"]]
+inds <- tmpLibSize > 2000
+tmpLibSize <- tmpLibSize[inds]
+libSizes <- list(
+    sample(tmpLibSize, size = input$n1, replace = TRUE), 
+    sample(tmpLibSize, size = input$n2, replace = TRUE))
 
 
 aux <- lapply(seq_along(piOne$"piVec"), FUN = function(i, obj1, obj2)
@@ -74,7 +81,7 @@ aux <- lapply(seq_along(piOne$"piVec"), FUN = function(i, obj1, obj2)
           alphas = cbind(obj1[[i]], obj2[[i]]),
           theta = piOne$"theta"[[i]],
           K = length(obj1[[i]]),
-          N = input$totCounts,
+          N = input$totCounts, libSizes = libSizes,
           seed = 12345)
     }, obj1 = piOne$"piVec", obj2 = piTwo$"piTwo")
 generatedCounts <- list(
@@ -110,7 +117,7 @@ drawPiPlot2 <- function(piOneObj, piTwoObj, theta, mars = c(4, 4, 3, .1) + .1, .
   
   usr <- par("usr")
   xCenter <- (usr[1L] + usr[2L])/2
-  shift <- strwidth(expression(theta), cex = 2)
+  shift <- strwidth("x", cex = 2)
   text(x = xCenter - shift, y = usr[4L],
       labels = expression(theta), pos = 1, cex = 1.5)
   ## add *offset = 1.1* if hat(theta) 
@@ -132,6 +139,7 @@ drawPiPlot2 <- function(piOneObj, piTwoObj, theta, mars = c(4, 4, 3, .1) + .1, .
 #pdf(file = "plotRads2.pdf", width = 9, height = 6)
 #png(file = "plotRads.png", width = 750, height = 1200, pointsize = 24)
 #jpeg(file = "plotRads.jpg", width = 750, height = 1000, pointsize = 24, quality = 100)
+#jpeg(file = "Prevotella.jpg", width = 1000, height = 600, pointsize = 24, quality = 100)
 #layout(t(1L:3))
 layout(1L:3)
 tmp <- lapply(seq_along(piOne$"piVec"), 

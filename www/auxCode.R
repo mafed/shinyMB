@@ -18,10 +18,8 @@
 ################################################################################
 ###
 
-
 ### generation of abundance probability distribution for sample one
-piOneGen <- function (K = 100, pBreak = .15, rates = c(1, .5), 
-                      kind = NULL,  diss = 0.05)
+piOneGen <- function (K = 100, pBreak = .15, rates = c(1, .5), kind = NULL,  diss = 0.05)
 {
   if(missing(kind))
   {
@@ -79,7 +77,7 @@ piOneGen <- function (K = 100, pBreak = .15, rates = c(1, .5),
            rr <- c(rr1, rr2)
          }
   )
-  
+  rr <- rr[order(rr, decreasing = TRUE)]
   rr / sum(rr)
 }# END - function: piOneGen
 
@@ -121,7 +119,7 @@ piOneGen <- function (K = 100, pBreak = .15, rates = c(1, .5),
 #' @export
 #' 
 rhoGenSpecOtus <- function(K, m1 = 2, m2 = 3, relAbund1 = 1.33, relAbund2 = 1.25, 
-                           otus2Change = NA)
+    otus2Change = NA)
 {
   
   rho <- rep.int(1, K)
@@ -144,51 +142,77 @@ rhoGenSpecOtus <- function(K, m1 = 2, m2 = 3, relAbund1 = 1.33, relAbund2 = 1.25
 
 
 
-piTwoGenSimple <- function(piOne, rho, compensation = c("mostAbund"))
+piTwoGenSimple <- function(piOne, rho, leastAbund = FALSE)
 {
   ### classify OTUs in: (i) non DA, (ii) DA, and (iii) DA for compensation
-  otuType <- rep.int(0, length(rho$rho))
-  ind1 <- abs(rho$rho - rho$relAbund1) <= .Machine$double.eps
-  ind2 <- abs(rho$rho - rho$relAbund2) <= .Machine$double.eps
-  otuType[ind1] <- 2
-  otuType[ind2] <- 1
+  otuType <- rep.int(0L, length(rho$rho))
+  indEqual <- abs(rho$rho - 1) <= .Machine$double.eps
+  ind1 <- abs(rho$rho - rho$relAbund1) <= .Machine$double.eps & !indEqual
+  ind2 <- abs(rho$rho - rho$relAbund2) <= .Machine$double.eps & !indEqual
+  otuType[ind1] <- 2L
+  otuType[ind2] <- 1L
   
   ### actually modify piOne
-  piTwo <- piOne * rho$rho
+  piTwo <- piOne * c(rho$rho, rep.int(1, length(piOne) - length(rho$rho)))
+  toCompensate <- sum(piTwo - piOne)
   
-  ### compute how much probability mass we have to compensate
+  ### default is _leastAbund=FALSE_ and compensation is done by dissipation among 
+  ### all unrequested OTUs, otherwise least abundant OTUs are set to 0 until
+  ### amount has been fully compensated.
+  if (leastAbund)
+  {
+    startInd <- max(which(otuType == 0))
+    indRun <- startInd
+    numIter <- 1L
+    
+    while(abs(sum(piTwo) - 1) > 1e-12 && (numIter <= sum((otuType == 0))))
+    {
+      aux <- piTwo[indRun]
+      piTwo[indRun] <- max(aux - toCompensate, 0)
+      toCompensate <- sign(toCompensate) * abs(aux - toCompensate)
+      indRun <- indRun - 1L
+      numIter <- numIter + 1L
+    }# END - while: compensate sequentially
+    
+    if (startInd != indRun)
+    {
+      otuType[startInd:indRun] <- -1
+    } else {}
+  } else
+  {
+    ### compute how much probability mass we have to compensate and
+    ### check if compensation is too big, in that case rescale requested OTUs
+    ## n0 = num. of 0-type OTUs, i.e. non-requested OTUs, procedure:
+    ## Let _d_ = _toCompensate_, _m0_ = sum of rel.abund. of unrequested OTUs,
+    ## _m1_ = sum of rel.abund. of requested OTUs,
+    ## if _d > m0_ then rescale requested OTUs multiplying each element by
+    ## [m1 - (d-m0)]/m1, as a consequence all unrequested OTUs are set to 0.
+    ## Otherwise, each unrequested OTU of _piTwo_ is multiplied by (m0 - d)/m0. 
+    m0 <- sum(piOne[otuType == 0L])
+    m1 <- sum(piTwo[otuType != 0L])
+    compensDiff <- toCompensate - m0 
+    if (compensDiff > 1e-12)
+    {
+      piTwo[otuType != 0L] <- piTwo[otuType != 0L] * (m1 - compensDiff) / m1
+    } else {}
+    
+    piTwo[otuType == 0L] <- piTwo[otuType == 0L] * (m0 - toCompensate)/m0
+  }# END - previous compensation strategy or _dissipate_
   
-  switch(compensation, 
-      "mostAbund" = {
-        toCompensate <- sum(piTwo - piOne)
-        changedOTUs <- rho$changedOTUs
-        startInd <- min(which(otuType == 0))
-        indRun <- startInd
-        
-        while(abs(sum(piTwo)) - 1 > 1e-12)
-        {
-          aux <- piTwo[indRun]
-          piTwo[indRun] <- max(aux - toCompensate, 0)
-          toCompensate <- sign(toCompensate) * abs(aux - toCompensate)
-          indRun <- indRun + 1L
-        }# END - while: compensate sequentially 
-      }# END - switch: compensation
-  )
-  
+  list("piTwo" = piTwo / sum(piTwo), "otuType" = as.factor(otuType))
 }# END - function: new piTwoGen, simple version
 
 
 
-
-
-
 piTwoGen <- function(piOne, rho, 
-    compensation = c("mostAbund", "relDiff", "zeros", "piAux"), otus4Balance = NA)
+    compensation = c("dissipate", "simple", "mostAbund", "relDiff", "zeros", "piAux"), 
+    otus4Balance = NA)
 {
   if(missing(compensation))
   {
 #    compensation <- "relDiff"
-    compensation <- "mostAbund"
+#     compensation <- "mostAbund"
+    compensation <- "dissipate"
   } else {}
   
   ### classify OTUs in: (i) non DA, (ii) DA, and (iii) DA for compensation
@@ -206,13 +230,14 @@ piTwoGen <- function(piOne, rho,
   
   ### compute how much probability mass we have to compensate and
   ### check if compensation is too big
-  increase <- sum(abs(piTwo - piOne))
   toCompensate <- sum(piTwo - piOne)
   compensDiff <- toCompensate - sum(piOne[otuType == 0])
+  increase <- sum(abs(piTwo - piOne))
   if (compensDiff > 1e-12)
   {
     equalOTUs <- otuType != 0L
     piTwo[equalOTUs] <- piTwo[equalOTUs] - compensDiff / sum(equalOTUs)
+    piTwo[piTwo < 0] <- 0
     rho$rho <- piTwo / piOne
     rho$relAbund1 <- el(rho$rho[otuType == 2L])
     rho$relAbund2 <- el(rho$rho[otuType == 1L])
@@ -225,13 +250,46 @@ piTwoGen <- function(piOne, rho,
   
   ## method of the fixed relative difference
   switch (compensation, 
+      "dissipate" = {
+        ## n0 = num. of 0-type OTUs, i.e. non-requested OTUs, procedure:
+        ## Let _d_ = _toCompensate_, _m0_ = sum of rel.abund. of unrequested OTUs,
+        ## and _r_ = (m0 - d)/m0. Each unrequested OTU of _piTwo_ is multiplied by _r_.
+        ## NOTE: this is the same strategy applied in the previous _if_ statement where
+        ## the amount to compensate is compared to the total mass available for 
+        ## compensation.
+        m0 <- sum(piTwo[otuType == 0L])
+        piTwo[otuType == 0L] <- piTwo[otuType == 0L] * (m0 - toCompensate)/m0
+        piTwo[piTwo < 0] <- 0
+      },
+      "simple" = {
+        ## n0 = num. of 0-type OTUs, i.e. non-requested OTUs, procedure:
+        ## (i) subtract _toCompensate/n0_ from all 0-type OTUs, OTUs with abundances
+        ##   lower than _toCompensate/n0_ are set to 0
+        ## (ii) if still there is a difference, all necessary least abundant OTUs are 
+        ##   set to 0 as well. In case _toCompensate < 0_, only (i) is needed
+        auxPiTwo <- piTwo[otuType == 0L]
+        auxAmount <- toCompensate / sum(otuType == 0L)
+        auxPiTwo <- ifelse(auxPiTwo < auxAmount, yes = 0, no = auxPiTwo - auxAmount)
+        piTwo[otuType == 0L] <- auxPiTwo
+        
+        newAmount <- sum(piTwo - piOne)
+        if (newAmount > 1e-10)
+        {
+          revAuxPiTwoCS <- cumsum(rev(auxPiTwo))
+          indToCompensate <- max(which(revAuxPiTwoCS <= newAmount))
+          auxPiTwo[(length(auxPiTwo) - indToCompensate):length(auxPiTwo)] <- 0
+          piTwo[otuType == 0L] <- auxPiTwo
+        } else {}
+        
+#         otuType[piTwo < 10 * .Machine$double.eps] <- -1L
+      },        # END - simple compensation: spread changes on other OTUs
       "mostAbund" = {
         
         startInd <- min(which(otuType == 0))
         indRun <- startInd
         numIter <- 1L
         
-        while(abs(sum(piTwo) - 1) > 1e-10 && numIter <= (length(piTwo) - startInd))
+        while(abs(sum(piTwo) - 1) > 1e-12 && numIter <= (length(piTwo) - startInd))
         {
           aux <- piTwo[indRun]
           piTwo[indRun] <- max(aux - toCompensate, 0)
@@ -363,20 +421,22 @@ countsGen <- function(sampleSizes, alphas, theta, K, N, seed = 1234, libSizes = 
   #    require(gtools)
   dmDataList <- piDirList <- vector("list", length(sampleSizes))
   
-  
   for(nRun in seq_along(sampleSizes))
   {
-    piDirList[[nRun]] <- rDirichlet(
-      n = sampleSizes[nRun], alpha = alphas[, nRun] * (1-theta)/theta)
-    piDirList[[nRun]][piDirList[[nRun]] <= .Machine$double.eps] <- 0
+    alphaTmp <- alphas[, nRun] * (1-theta)/theta
+    alphaTmp[alphaTmp < 0] <- 0
+    tmpPiDir <- rDirichlet(n = sampleSizes[nRun], alpha = alphaTmp)
+    inds <- (tmpPiDir <= .Machine$double.eps) | is.na(tmpPiDir)
+    tmpPiDir[inds] <- 0
     
     tmp <- matrix(NA, nrow = sampleSizes[nRun], ncol = K)
     
     for(iRun in seq_len(sampleSizes[nRun]))
-      tmp[iRun, ] <- rmultinom(n = 1, size = libSizes[[nRun]][iRun], 
-                               prob = piDirList[[nRun]][iRun, ])
+      tmp[iRun, ] <- rmultinom(n = 1L, size = libSizes[[nRun]][iRun], 
+          prob = tmpPiDir[iRun, ])
     
     dmDataList[[nRun]] <- tmp
+    piDirList[[nRun]] <- tmpPiDir
   }
   
   list("dmDataList" = dmDataList, "piDirList" = piDirList)
@@ -405,7 +465,7 @@ drawPiPlot <- function(countsData, piOneObj, piTwoObj, theta, ...)
   par(mar = c(4, 4, 3, .1) + .1)
   plot(piOneObj, type = "n", 
        ylim = range(0, piOneObj, piTwoObj), #yAuxCoords1, yAuxCoords2), 
-       xlab = "OTU Index", cex.lab = 1.2, 
+       xlab = "OTU Index of Controls", cex.lab = 1.2, 
        #                main = expression(paste("Ranked Abundances for ", pi[1])),
        ...)
   
@@ -429,7 +489,8 @@ drawPiPlot <- function(countsData, piOneObj, piTwoObj, theta, ...)
   
   usr <- par("usr")
   xCenter <- (usr[1L] + usr[2L])/2
-  shift <- strwidth(expression(theta), cex = 2)
+#   shift <- strwidth(expression(theta), cex = 2)
+  shift <- strwidth("M", cex = 1.5)
   text(x = xCenter - shift, y = usr[4L],
        labels = expression(theta), pos = 1, cex = 1.5)
   ## add *offset = 1.1* if hat(theta) 
